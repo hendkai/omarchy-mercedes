@@ -66,14 +66,31 @@ omarchy-mercedes doctor    # prüft python/protobuf/requests/keyring/waybar
 omarchy-mercedes login     # Browser-Login bei Mercedes (unterstützt 2FA)
 ```
 
-Beim Login öffnet sich die Mercedes-Anmeldeseite im Browser. Nach der
-Anmeldung leitet Mercedes auf `rismycar://login-callback?code=…` um — Desktop-
-Browser brechen dort oft mit einer Fehlerseite ab. Das ist erwartbar und kein
-Fehler: Die komplette Adresse aus der Adressleiste (oder der `code`-Parameter
-darin) wird einfach ins Terminal eingefügt. Alternativ funktioniert der
-rein headless Passwort-Flow (`omarchy-mercedes login --password`), wenn für
-das Konto **keine** 2FA aktiviert ist; bei OTP-Pflicht verweist das Tool auf
-den Browser-Flow.
+Beim Login öffnet sich die Mercedes-Anmeldeseite im Browser. Nach der Anmeldung
+leitet Mercedes auf `rismycar://login-callback?code=…` um. Unter Linux/Omarchy
+registriert der Login dafür temporär einen System-Handler für `rismycar://`, der
+die Rückleitung automatisch an das laufende Terminal übergibt (ein vorhandener
+Handler wird vorher gefragt und danach wiederhergestellt; der Browser-Dialog
+„Open With…“ ist in dieser Phase also kein Fehler). Klappt die automatische
+Übergabe nicht, bleibt der manuelle Fallback: die **komplette Callback-Adresse**
+`rismycar://login-callback?code=…` **oder nur der Wert nach `code=`** wird im
+Terminal eingefügt (verdeckt, ohne Echo). 
+
+Wichtig und ehrlich: Die Adresse in der Adressleiste ist **nicht zu jedem
+Zeitpunkt** die richtige Weiterleitung. Die Anmelde-**Startseite**
+(`https://id.mercedes-benz.com/as/authorization.oauth2?…`) ist **kein** Callback
+und wird vom Tool ausdrücklich abgelehnt — steht sie noch in der Adressleiste,
+wurde die Anmeldung im Browser nicht (erfolgreich) abgeschlossen. Zeigt der
+Browser „No apps installed that can open …“, muss **nicht** im Store nach einer
+App gesucht werden: Eingabe im Terminal ist der Weg. Alternativ funktioniert der
+rein headless Passwort-Flow (`omarchy-mercedes login --password`), wenn für das
+Konto **keine** 2FA aktiviert ist; bei OTP-Pflicht verweist das Tool auf den
+Browser-Flow.
+
+**Status: experimentell.** Ein echter Mercedes-Login/2FA-Ablauf wurde von uns
+nur teilweise verifiziert (keine Kontodaten in der CI); der automatische
+Callback-Handoff ist standardmäßig aktiv, sein Zustandekommen hängt vom
+Desktop/Browser ab. Rückmeldung aus realen Logins ist willkommen.
 
 ```bash
 systemctl --user start --now omarchy-mercedes   # Connector-Daemon
