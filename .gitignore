@@ -1,0 +1,9 @@
+# omarchy-mercedes
+.env
+token.json
+status.json
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/

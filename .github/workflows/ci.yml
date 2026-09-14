@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.9", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install deps
+        run: python -m pip install requests "protobuf>=4.25"
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: CLI smoke
+        run: |
+          python -m omarchy_mercedes.cli --version
+          python -m omarchy_mercedes.waybar_module < /dev/null | python -c "import json,sys; d=json.loads(sys.stdin.read()); assert 'text' in d and 'class' in d; print('waybar json ok:', d['class'])"
+      - name: Installer syntax check
+        run: bash -n install.sh uninstall.sh
+
+  install-isolated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Isolated user install / uninstall roundtrip
+        run: |
+          set -eux
+          export HOME="$PWD/fakehome"
+          mkdir -p "$HOME"
+          export PATH="$HOME/.local/bin:$PATH"
+          python -m pip install --user requests "protobuf>=4.25" >/dev/null
+          bash install.sh <<< "" || true
+          test -x "$HOME/.local/bin/omarchy-mercedes"
+          "$HOME/.local/bin/omarchy-mercedes" --version
+          "$HOME/.local/bin/omarchy-mercedes-waybar" | grep -q '"class"'
+          "$HOME/.local/bin/omarchy-mercedes" daemon --once --poll-interval 60 || test $? -eq 2
+          printf 'J\n' | bash uninstall.sh
+          test ! -e "$HOME/.local/bin/omarchy-mercedes"

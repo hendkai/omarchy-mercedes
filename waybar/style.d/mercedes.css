@@ -1,0 +1,24 @@
+/* omarchy-mercedes waybar module styles (add to your style.css) */
+
+#custom-mercedes {
+    padding: 0 8px;
+    margin: 0 2px;
+    border-radius: 6px;
+}
+
+#custom-mercedes.charging {
+    /* charging: green accent */
+    color: #a6e3a1;
+}
+
+#custom-mercedes.stale {
+    /* data old: dim amber */
+    color: #f9e2af;
+}
+
+#custom-mercedes.offline,
+#custom-mercedes.no-session,
+#custom-mercedes.error {
+    /* problems: red */
+    color: #f38ba8;
+}
