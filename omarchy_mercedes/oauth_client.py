@@ -168,23 +168,7 @@ class MercedesOAuthClient:
             raise AuthError("password step returned invalid JSON") from e
 
         if pre.get("passkeyDemoEnabled"):
-            r = self._request(
-                "POST",
-                f"{self.base}/ciam/auth/disablePasskeyDemo",
-                json={
-                    "username": email,
-                    "password": password,
-                    "rememberMe": False,
-                    "rid": rid,
-                    "disablePasskeyDemo": True,
-                },
-                headers=_basic_headers(self.base),
-            )
-            if r.status_code < 400:
-                try:
-                    pre = r.json()
-                except ValueError:
-                    pass
+            raise AuthError("passkey interaction required; complete login in the official browser flow")
 
         result = pre.get("result", "")
         if result == "GOTO_LOGIN_OTP":

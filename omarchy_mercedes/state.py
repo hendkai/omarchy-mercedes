@@ -34,15 +34,14 @@ def now_ms() -> int:
 def write_status(data: dict, path: Path = STATUS_FILE) -> None:
     data = dict(data)
     data.setdefault("written_at_ms", now_ms())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
-    os.replace(tmp, path)
+    from .private_io import write_private
+    write_private(path, json.dumps(data, ensure_ascii=False, allow_nan=False))
 
 
 def read_status(path: Path = STATUS_FILE) -> dict | None:
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else None
     except (OSError, ValueError):
         return None
 
@@ -67,9 +66,12 @@ def fmt_local(ms: int | float | None, tz_name: str | None = None) -> str:
     tz_name: explicit IANA zone from config (documented, never guessed from
     naive strings). Falls back to system-local when unset/unavailable.
     """
-    if not ms:
+    if type(ms) not in (int, float) or not 0 < ms < 253402300800000:
         return "keine Angabe"
-    dt = datetime.fromtimestamp(ms / 1000.0)
+    try:
+        dt = datetime.fromtimestamp(ms / 1000.0)
+    except (ValueError, OSError, OverflowError):
+        return "keine Angabe"
     if tz_name:
         try:
             from zoneinfo import ZoneInfo
@@ -80,40 +82,35 @@ def fmt_local(ms: int | float | None, tz_name: str | None = None) -> str:
     return dt.strftime("%d.%m. %H:%M")
 
 
+def valid_timestamp(ts) -> bool:
+    return type(ts) in (int, float) and 0 < ts <= time.time() * 1000 + 60000
+
+
+def age_s(ts) -> float | None:
+    return max(0, time.time() - ts / 1000.0) if valid_timestamp(ts) else None
+
+
 def vehicle_age_s(status: dict) -> float | None:
-    """Age of the newest vehicle telemetrics timestamp we displayed."""
-    ts = status.get("vehicle_ts_ms")
-    return (time.time() - ts / 1000.0) if ts else None
+    # Old caches used max(attribute timestamps); those cannot establish SoC age.
+    return age_s(status.get("soc_ts_ms"))
 
 
 def connection_age_s(status: dict) -> float | None:
-    """Age of the connector's last successful data write."""
-    ts = status.get("fetched_at_ms")
-    return (time.time() - ts / 1000.0) if ts else None
+    return age_s(status.get("fetched_at_ms"))
 
 
 def classify(status: dict | None, stale_after_s: int, offline_after_s: int | None = None) -> str:
-    """Derive display state from a status dict (None/missing file => offline).
-
-    offline_after_s defaults to 3x the freshness bound; the status file's own
-    write time bounds how long we trust a cached view.
-    """
     if not isinstance(status, dict):
-        return STATE_NO_SESSION if status is None and False else STATE_OFFLINE
+        return STATE_OFFLINE
     if status.get("state") == STATE_NO_SESSION:
         return STATE_NO_SESSION
-    written = status.get("written_at_ms")
-    if not written:
+    written_age = age_s(status.get("written_at_ms"))
+    if written_age is None or written_age > (offline_after_s or 3 * stale_after_s):
         return STATE_OFFLINE
-    if offline_after_s is None:
-        offline_after_s = 3 * stale_after_s
-    if time.time() * 1000 - written > offline_after_s * 1000:
-        return STATE_OFFLINE
-    if status.get("state") == STATE_ERROR:
+    if status.get("state") not in (STATE_OK, STATE_STALE):
         return STATE_ERROR
+    soc = status.get("soc_percent")
     age = vehicle_age_s(status)
-    if age is None:
+    if type(soc) is not int or not 0 <= soc <= 100 or age is None:
         return STATE_ERROR
-    if age > stale_after_s:
-        return STATE_STALE
-    return STATE_OK
+    return STATE_STALE if age > stale_after_s else STATE_OK

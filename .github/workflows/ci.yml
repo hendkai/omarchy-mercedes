@@ -37,15 +37,5 @@ jobs:
           python-version: "3.12"
       - name: Isolated user install / uninstall roundtrip
         run: |
-          set -eux
-          export HOME="$PWD/fakehome"
-          mkdir -p "$HOME"
-          export PATH="$HOME/.local/bin:$PATH"
-          python -m pip install --user requests "protobuf>=4.25" >/dev/null
-          bash install.sh <<< "" || true
-          test -x "$HOME/.local/bin/omarchy-mercedes"
-          "$HOME/.local/bin/omarchy-mercedes" --version
-          "$HOME/.local/bin/omarchy-mercedes-waybar" | grep -q '"class"'
-          "$HOME/.local/bin/omarchy-mercedes" daemon --once --poll-interval 60 || test $? -eq 2
-          printf 'J\n' | bash uninstall.sh
-          test ! -e "$HOME/.local/bin/omarchy-mercedes"
+          python -m pip install requests "protobuf>=4.25" keyring
+          bash tools/verify_linux.sh

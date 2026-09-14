@@ -30,6 +30,9 @@ dev = ["pytest"]
 omarchy-mercedes = "omarchy_mercedes.cli:main"
 omarchy-mercedes-waybar = "omarchy_mercedes.waybar_module:main"
 
+[tool.setuptools]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+
 [tool.setuptools.packages.find]
 include = ["omarchy_mercedes*"]
 

@@ -133,7 +133,7 @@ class TestClassifyAndState(unittest.TestCase):
         return {
             "state": state_,
             "soc_percent": 50,
-            "vehicle_ts_ms": ts,
+            "vehicle_ts_ms": ts, "soc_ts_ms": ts,
             "fetched_at_ms": ts,
             "written_at_ms": ts,
         }
@@ -169,7 +169,7 @@ class TestClassifyAndState(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / "status.json"
+            p = Path(d).resolve() / "status.json"
             state.write_status({"state": "ok", "soc_percent": 33}, p)
             self.assertEqual(state.read_status(p)["soc_percent"], 33)
             # invalid json -> None, never a crash
@@ -186,7 +186,7 @@ class TestWaybarRender(unittest.TestCase):
         out = self.render_now({
             "state": "ok", "soc_percent": 82, "range_km": 315, "range_unit": "km",
             "charging": True, "charging_power_kw": 11,
-            "vehicle_ts_ms": (NOW_S - 120) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
+            "vehicle_ts_ms": (NOW_S - 120) * 1000, "soc_ts_ms": (NOW_S - 120) * 1000, "range_ts_ms": (NOW_S - 120) * 1000, "charging_ts_ms": (NOW_S - 120) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         self.assertIn("82%", out["text"])
@@ -199,7 +199,7 @@ class TestWaybarRender(unittest.TestCase):
     def test_ok_not_charging(self):
         out = self.render_now({
             "state": "ok", "soc_percent": 64, "range_km": 240, "charging": False,
-            "vehicle_ts_ms": (NOW_S - 300) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
+            "vehicle_ts_ms": (NOW_S - 300) * 1000, "soc_ts_ms": (NOW_S - 300) * 1000, "range_ts_ms": (NOW_S - 300) * 1000, "charging_ts_ms": (NOW_S - 300) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         self.assertEqual(out["class"], "ok")
@@ -208,7 +208,7 @@ class TestWaybarRender(unittest.TestCase):
     def test_stale_marked_not_fresh(self):
         out = self.render_now({
             "state": "ok", "soc_percent": 82, "range_km": 315, "charging": False,
-            "vehicle_ts_ms": (NOW_S - 86400) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
+            "vehicle_ts_ms": (NOW_S - 86400) * 1000, "soc_ts_ms": (NOW_S - 86400) * 1000, "range_ts_ms": (NOW_S - 86400) * 1000, "charging_ts_ms": (NOW_S - 86400) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         self.assertEqual(out["class"], "stale")
@@ -245,7 +245,7 @@ class TestWaybarRender(unittest.TestCase):
     def test_valid_json_output(self):
         out = self.render_now({
             "state": "ok", "soc_percent": 82, "charging": True,
-            "vehicle_ts_ms": (NOW_S - 10) * 1000, "fetched_at_ms": (NOW_S - 5) * 1000,
+            "vehicle_ts_ms": (NOW_S - 10) * 1000, "soc_ts_ms": (NOW_S - 10) * 1000, "range_ts_ms": (NOW_S - 10) * 1000, "charging_ts_ms": (NOW_S - 10) * 1000, "fetched_at_ms": (NOW_S - 5) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         json.dumps(out)  # must not raise
@@ -322,6 +322,17 @@ class TestOAuthClient(unittest.TestCase):
             if "login/pass" not in url and "disablePasskeyDemo" not in url:
                 self.assertNotIn("hunter2-SECRET", json.dumps(kw.get("json", {})))
 
+    def test_passkey_does_not_change_account_settings(self):
+        responses = [
+            FakeResponse(200, url="https://id.mercedes-benz.com/as/login?resume=%2Fsynthetic"),
+            FakeResponse(200, {}), FakeResponse(200, {}),
+            FakeResponse(200, {"passkeyDemoEnabled": True}),
+        ]
+        client, session = self._client(responses)
+        with self.assertRaises(AuthError):
+            client.login_with_password("user@example.com", "SYNTHETIC_PASSWORD")
+        self.assertFalse(any("disablePasskeyDemo" in url for _, url, _ in session.calls))
+
     def test_network_error_wrapped(self):
         class ExplodingSession:
             def request(self, *a, **k):
@@ -337,11 +348,12 @@ class TestSessionStore(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as d:
-            with mock.patch("omarchy_mercedes.daemon.DATA_DIR", Path(d)), \
-                 mock.patch("omarchy_mercedes.daemon.SESSION_FILE", Path(d) / "session.json"):
+            with mock.patch("omarchy_mercedes.daemon.DATA_DIR", Path(d).resolve()), \
+                 mock.patch("omarchy_mercedes.daemon.SESSION_FILE", Path(d).resolve() / "session.json"), \
+                 mock.patch("omarchy_mercedes.daemon._keyring", return_value=None):
                 tok = {"access_token": "SECRET-AT", "refresh_token": "SECRET-RT", "expires_at": 1}
                 save_session(tok)
-                f = Path(d) / "session.json"
+                f = Path(d).resolve() / "session.json"
                 # keyring unavailable in tests -> file fallback must exist, 0600
                 self.assertTrue(f.exists())
                 self.assertEqual(f.stat().st_mode & 0o777, 0o600)

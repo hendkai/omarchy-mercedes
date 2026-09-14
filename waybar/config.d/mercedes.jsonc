@@ -1,7 +1,6 @@
 {
   "custom/mercedes": {
     "exec": "~/.local/bin/omarchy-mercedes-waybar",
-    "exec-if": "test -f ~/.local/state/omarchy-mercedes/status.json || true",
     "interval": 60,
     "return-type": "json",
     "tooltip": true,

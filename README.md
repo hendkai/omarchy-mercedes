@@ -1,150 +1,189 @@
 # omarchy-mercedes
 
-Ladezustand (State of Charge) deines Mercedes EQ (und anderer Mercedes-Benz
-Fahrzeuge mit Mercedes me connect) direkt in der **Omarchy/Waybar-Taskleiste** —
-ohne Home Assistant, ohne Cloud-Dienstleister dazwischen.
+> **EXPERIMENTELL / TESTVERSION — kein verifizierter Mercedes-Live-Login oder
+> 2FA-/Omarchy-GUI-Test.** Die automatisierten Auth-/Fahrzeugtests sind
+> ausschließlich synthetisch. Eine grüne CI bestätigt keine funktionierende
+> Anmeldung bei Mercedes. Liveprüfung übernimmt der Nutzer; keine stabile
+> Freigabe behauptet.
 
-```
-🚗 82%          🔌 82%          🚗 82% (?)       🚗 Anmeldung erforderlich
-```
+Mercedes-Ladestand in der Omarchy/Waybar-Leiste, ohne Home Assistant als
+Laufzeitabhängigkeit. Der Connector liest nur Account-Fahrzeugliste und
+Widget-Telemetrie; keine Fahrzeugbefehle, kein Wakeup, keine Klima-/Schlosssteuerung.
+Waybar liest ausschließlich den lokalen Cache, niemals Tokens oder Netzwerk.
 
-- **Read-only**: Das Modul enthält keinerlei Fahrzeug-Befehle (kein Lock,
-  kein KlimaN, kein Wakeup). Nur Lesen von Ladestand, Reichweite, Lade­
-  status, Ladeleistung.
-- **Ehrlich bei alten Daten**: Verbindungsfrische und Fahrzeugdaten-Alter
-  werden getrennt ausgewiesen. Alte Fahrzeugdaten werden nie als aktuell
-  dargestellt (eigenes `stale`-Styling + Alter im Tooltip).
-- **Keine Secrets in Waybar**: Der Waybar-Prozess liest nur eine lokale
-  Status-Datei. Login, Tokens und Netzwerk liegen in einem getrennten
-  Connector-Daemon (systemd `--user`).
+Dieses inoffizielle Projekt verwendet die Mobile-SDK-Endpunkte, die auch
+[mbapi2020](https://github.com/ReneNulschDE/mbapi2020) nutzt. Es ist nicht von
+Mercedes-Benz unterstützt oder mit Mercedes-Benz Group AG verbunden. Endpunkte,
+Anmeldebedingungen und Kontozugriff können sich ändern; Nutzung auf eigenes Risiko.
+Wir machen keine Aussage über aktuelle Verfügbarkeit offizieller Developer-APIs.
 
-> **Wichtiger Hinweis**: Dieses Projekt nutzt die inoffizielle
-> Mercedes-Benz Mobile-SDK-API (dieselbe, die auch die beliebte
-> Home-Assistant-Integration `mbapi2020` verwendet). Sie ist nicht
-> offiziell dokumentiert und kann sich jederzeit ändern oder (selten)
-> Konten blockieren. Mercedes-Logos werden nicht verwendet; dies ist keine
-> offizielle Mercedes-Benz-App. Ein offizieller "Car Connect"-Zugang mit
-> eigenen API-Credentials ist für Privatkonten derzeit nicht verfügbar
-> (Developer-Programm für BYOCAR-Pools eingestellt).
+## Installation
 
-## Wie es funktioniert
-
-```
-Mercedes CIAM (id.mercedes-benz.com)  ──OAuth2/PKCE──▶  omarchy-mercedes login
-                                                            │ Tokens (0600/Keyring)
-                                                            ▼
-              widget/v1/vehicleattributes (protobuf) ◀── Connector-Daemon
-                                                            │ redigierter Status
-                                                            ▼
-                                        ~/.local/state/omarchy-mercedes/status.json
-                                                            │ nur Lesezugriff
-                                                            ▼
-                                              Waybar-Modul `custom/mercedes`
-```
-
-## Installation (Omarchy / Arch / jede Waybar-Distro)
+Voraussetzungen: Linux, Python ≥ 3.9 mit `venv` und pip, Internet für PyPI;
+Waybar für die Anzeige und optional ein laufender systemd-Benutzermanager.
+Auf Debian ist eventuell `python3-venv` nachzuinstallieren, auf Arch `python`
+und `python-pip`. Der Installer arbeitet ohne root.
 
 ```bash
 git clone https://github.com/hendkai/omarchy-mercedes.git
 cd omarchy-mercedes
 ./install.sh
+export PATH="$HOME/.local/bin:$PATH"
+omarchy-mercedes doctor
 ```
 
-Der Installer installiert als Benutzer (kein root): Python-Paket, Wrapper in
-`~/.local/bin`, systemd-`--user`-Unit, Waybar-Snippets. Vorhandene Waybar-
-Konfiguration wird gesichert und nur gezielt ergänzt (`config.d/`-Snippet bzw.
-Backup + Hinweis). Rollback: `./uninstall.sh`.
+Das Paket inklusive optionalem `keyring` wird in einer isolierten venv unter
+`~/.local/share/omarchy-mercedes/venv` installiert. Keine System-/User-pip-
+Installation und kein `--break-system-packages`-Fallback. Bei pip-/venv-Fehlern
+stoppt der Installer mit Fehlerstatus. PATH dauerhaft in der Shell ergänzen.
 
-Abhängigkeiten: `python3` (≥ 3.9), `requests`, `protobuf` (>= 4.25),
-optional `keyring` (Secret Service). Der Installer installiert das Paket per
-`pip --user` (auf PEP-668-Distros automatisch mit `--break-system-packages`).
+Der Installer:
 
-## Ersteinrichtung (einmalig, interaktiv)
+- installiert Wrapper unter `~/.local/bin` und eine systemd-`--user`-Unit;
+- aktiviert/startet den Dienst **nicht** automatisch; ein eigener aktiver Dienst
+  wird vor einer Neuinstallation gestoppt und muss danach neu gestartet werden;
+- integriert `custom/mercedes` direkt in `modules-right` und als Moduldefinition
+  der vorhandenen monolithischen `~/.config/waybar/config.jsonc` (sonst `config`);
+- erhält Kommentare/unbeteiligte JSONC-Abschnitte, ergänzt CSS und kopiert Snippets;
+- verändert ohne vorhandene Hauptkonfiguration keine Waybar-Dateien;
+- sichert Originalinhalt/Modus und eigene Ziel-Hashes vor dem Schreiben im privaten
+  `~/.local/state/omarchy-mercedes/install-manifest.json`.
+
+Neuinstallation ist idempotent. Vorhandene gleichnamige Wrapper/Unit/Snippets
+werden gesichert und beim Uninstall wiederhergestellt. Wurde eine verwaltete
+Datei zwischenzeitlich vom Nutzer geändert, bricht Reinstall/Uninstall ab,
+**ohne sie zu überschreiben oder zu löschen**. Der Manifest-Backup bleibt zur
+bewussten manuellen Zusammenführung erhalten. Ein alter Pre-Manifest-Installer
+wird nicht blind migriert. Symlinks und unklare JSONC-Formen (mehrere Bars als
+Array, doppelte Schlüssel, fehlendes `modules-right`) werden sicher abgelehnt.
+Installer unterstützen nur Standard-HOME-Pfade; benutzerdefinierte
+`OMARCHY_MERCEDES_DATA_DIR`/`OMARCHY_MERCEDES_STATE_DIR` dafür vorher entfernen.
+
+## Anmeldung (experimentell)
 
 ```bash
-omarchy-mercedes doctor    # prüft python/protobuf/requests/keyring/waybar
-omarchy-mercedes login     # Browser-Login bei Mercedes (unterstützt 2FA)
+omarchy-mercedes login                 # Browser + verdeckter manueller Callback
+# oder URL selbst öffnen:
+omarchy-mercedes login --no-open
 ```
 
-Beim Login öffnet sich die Mercedes-Anmeldeseite im Browser. Nach der
-Anmeldung leitet Mercedes auf `rismycar://login-callback?code=…` um — Desktop-
-Browser brechen dort oft mit einer Fehlerseite ab. Das ist erwartbar und kein
-Fehler: Die komplette Adresse aus der Adressleiste (oder der `code`-Parameter
-darin) wird einfach ins Terminal eingefügt. Alternativ funktioniert der
-rein headless Passwort-Flow (`omarchy-mercedes login --password`), wenn für
-das Konto **keine** 2FA aktiviert ist; bei OTP-Pflicht verweist das Tool auf
-den Browser-Flow.
+Es existiert **kein Callback-Listener und kein registrierter xdg-Protokollhandler**.
+Ein Desktop-Browser zeigt die `rismycar://`-Adresse oft NICHT in der Adressleiste.
+Deshalb ist „Adresse einfach kopieren“ kein verlässlicher Weg.
+
+Manueller Fallback für erfahrene Nutzer:
+
+1. Auf der geöffneten Mercedes-Seite die Browser-Entwicklertools öffnen, Tab
+   Netzwerk wählen, „Log beibehalten / Preserve log“ einschalten.
+2. Die Anmeldung inklusive eventueller MFA ausschließlich bei Mercedes abschließen.
+3. Die finale Redirect-Antwort auswählen, ihren `Location`-Header kopieren:
+   `rismycar://login-callback?code=…&state=…`. Falls dieser Redirect nicht sichtbar
+   ist oder Mercedes den Flow ablehnt: abbrechen. Es wird nichts umgangen.
+4. Die vollständige Callback-URL innerhalb von 5 Minuten am **verdeckten
+   Terminal-Prompt** einfügen. Kein Code auf der Befehlszeile, in Chat, Screenshot,
+   HAR-Export oder Shell-History. Anschließend Clipboard und Netzwerkprotokoll löschen.
+
+Die URL muss zum OAuth-`state` dieses Versuchs passen; PKCE bindet den Austausch.
+Fehler beim Browserstart geben eine manuell zu öffnende Login-URL aus.
+Timeout, EOF und Strg+C brechen ab. Ohne interaktives TTY wird nicht auf sichtbare
+stdin-Eingabe zurückgefallen. Der Capture-/Austauschpfad wurde mit synthetischen
+Callbacks/echtem PTY getestet, **nicht mit einem echten Mercedes-Konto**. Browser-
+Version und Backend können diesen manuellen Fallback verhindern.
+
+`omarchy-mercedes login --password` ist ein ebenfalls experimenteller CIAM-
+Passwortflow. OTP-Pflicht/Legal-Consent werden als Fehler gemeldet; keine
+MFA-/CAPTCHA-Umgehung und keine behauptete 2FA-Unterstützung.
 
 ```bash
-systemctl --user start --now omarchy-mercedes   # Connector-Daemon
-omarchy-mercedes status                         # Kontrolle
-# Waybar neu starten / neu laden — fertig.
+systemctl --user enable --now omarchy-mercedes
+omarchy-mercedes status
+omarchy-mercedes daemon --once          # optional, echter Smoke nach Login
+# Waybar danach über die Desktop-Umgebung neu laden.
 ```
 
-Zeitzone für die Tooltip-Zeiten: standardmäßig `Europe/Berlin`
-(`OMARCHY_MERCEDES_TZ` überschreiben oder `--timezone` am Waybar-Skript).
+Ohne systemd-Benutzermanager: `omarchy-mercedes daemon` im Terminal starten.
+Diesen manuellen Prozess vor Deinstallation selbst beenden. Die User-Unit nutzt
+`NoNewPrivileges` und private Umask; sie beansprucht keine ungetestete
+Filesystem-Namespace-Isolation oder zusätzlichen Gruppenrechte.
 
-## Modul-Stati
+## Zustände und Frische
 
-| Anzeige              | class        | Bedeutung                                              |
-|----------------------|--------------|--------------------------------------------------------|
-| 🚗 82%               | `ok`         | Daten frisch                                           |
-| 🔌 82% (grün)        | `charging`   | Ladevorgang aktiv                                      |
-| 🚗 82% (?) (amber)   | `stale`      | Verbindung ok, Fahrzeugdaten älter als 30 min          |
-| 🚗 offline (rot)     | `offline`    | Connector liefert nichts (Daemon/Netz)                 |
-| 🚗 Anmeldung … (rot) | `no-session` | Login nötig (Token widerrufen/abgelaufen)              |
-| 🚗 ! (rot)           | `error`      | API-/Netzfehler (Hinweis im Tooltip)                   |
+| Anzeige | class | Bedeutung |
+|---|---|---|
+| 🚗 82% | `ok` | gültiger, frischer SoC |
+| 🔌 82% | `charging` | SoC UND tatsächlicher Ladezustand frisch |
+| 🚗 82% (?) | `stale` | SoC älter als 30 Minuten |
+| 🚗 offline | `offline` | Cache fehlt, ist beschädigt oder lange nicht geschrieben |
+| 🚗 Anmeldung erforderlich | `no-session` | keine Session für Region / widerrufene Session |
+| 🚗 ! | `error` | API-/Netzfehler oder ungültige Messwerte |
 
-Der Tooltip zeigt Reichweite, Ladeleistung, Ladeende, **Fahrzeugdaten-
-Zeitpunkt mit Alter** und den letzten erfolgreichen Abgleich.
+Das Alter des **SoC-eigenen** Zeitstempels bestimmt die Prozent-Anzeige — frische
+Reichweite macht alten SoC nicht frisch. Reichweite, Ladestatus, Ladeleistung und
+Ladeende haben eigene Zeitstempel/Alter im Tooltip. Unbekannte/ungültige Werte
+werden nicht als Messungen ausgegeben; alte Ladezustände färben die Leiste nicht
+als aktiven Ladevorgang. Alte Cacheformate ohne SoC-Zeitstempel erfordern einen
+neuen Poll. Alle Prozent-/Telemetriebeispiele hier sind synthetisch.
 
-## Konfiguration
+## Session und Optionen
 
-Meist ist nichts zu konfigurieren. Optionen:
-
-- `omarchy-mercedes daemon --region eu|na|apac|cn` (Standard `eu`)
-- `--vin WDD…` — bei mehreren Fahrzeugen gezielt auswählen
-  (Standard: erstes Fahrzeug des Kontos; `omarchy-mercedes vehicles` zeigt alle)
-- `--poll-interval` Sekunden (Standard 300, Minimum 60; + Exponential-Backoff
-  bei Fehlern). Wir lösen bewusst **keine Fahrzeug-Wakeups** aus und nutzen
-  nur den Widget-Attribut-Endpoint (read-only).
-- Waybar: `--stale-after` Sekunden (Standard 1800)
-
-## Token-Sicherheit
-
-- Refresh-/Access-Tokens liegen im Secret Service (keyring), wenn verfügbar;
-  Fallback: `~/.local/share/omarchy-mercedes/session.json` mit `0600`.
-- Tokens erscheinen nie im Repo, in Logs (Redaction vor jedem Log) oder im Chat.
-- Bei widerrufener Session zeigt das Modul `Anmeldung erforderlich` — dann
-  einfach erneut `omarchy-mercedes login`.
-- "Einmal einloggen, für immer" können wir nicht garantieren: Mercedes kann
-  Sessions jederzeit beenden oder Refresh-Rotation erzwingen (wird
-  transparent behandelt).
+- `login`, `vehicles` und `daemon` unterstützen `--region eu|na|apac|cn` (Default EU).
+  Die Region der gespeicherten Session muss zum Dienst passen; Unit ggf. bewusst anpassen.
+- `daemon --vin ...` wählt ein Fahrzeug, sonst das erste im Account. `vehicles`
+  zeigt echte VINs nur lokal im Terminal; diese Ausgabe nicht veröffentlichen.
+- `daemon --poll-interval 300` (Minimum 60 Sekunden), exponentieller begrenzter
+  Backoff bei transienten Fehlern. Kein sofortiger Retry-Sturm.
+- Access-/Refresh-Tokens bevorzugt im Keyring, ohne vorherige Klartextdatei.
+  Fallback `~/.local/share/omarchy-mercedes/session.json`: atomar von Beginn an
+  0600, private Verzeichnisse 0700. Ein neuer Fallback verdrängt einen alten
+  Keyring-Eintrag unabhängig von dessen Ablaufdatum.
+- Automatische Refresh-Rotation; höchstens ein Refresh je Poll, bei erneutem 401
+  Anmeldung erforderlich. Netzwerk-/5xx-Fehler löschen keine Session.
+- Laufender Daemon liest den Store vor jedem Poll neu. Login/Logout/Refresh
+  werden über Prozesslock serialisiert; Logout wartet gegebenenfalls den laufenden
+  HTTP-Poll ab. Nach Rückkehr kann kein alter In-Memory-Refresh die Session erneuern.
+- `omarchy-mercedes logout` löscht beide Tokenstores und setzt sofort no-session.
+  Ein secretfreier lokaler Logout-Marker verhindert alte Keyring-Sessions auch
+  bei gesperrtem Keyring; fehlgeschlagene Keyring-Löschung wird **als Fehler** gemeldet.
+  Keyring entsperren und Logout wiederholen, bevor das Paket entfernt wird.
+- `daemon --once`: Exit 0 = auswertbare Messung (kann weiterhin `stale` sein!),
+  1 = Daten-/API-/Netzfehler, 2 = keine gültige Session. Zusätzlich Tooltip/Alter prüfen.
+- Waybar `--stale-after 1800`, `--timezone Europe/Berlin`, `--compact`.
+  Wrapper-Zeitzone über `OMARCHY_MERCEDES_TZ`, ungültige Zeitzone fällt auf Systemzone zurück.
 
 ## Deinstallation
 
 ```bash
-./uninstall.sh        # inkl. Backup-Rollback der Waybar-Konfiguration
+./uninstall.sh
 ```
 
-## Entwicklung & Tests
+Prompt „Session (Tokens) und Statuscache belassen? [J/n]“:
+`J`/Enter behält **beide** Stores, `n` löscht Keyring- und Dateitokens, solange
+CLI/Abhängigkeiten noch existieren und der User-Dienst gestoppt ist. Bei einem
+Keyring-Fehler bleibt das Paket für einen Wiederholungsversuch erhalten. Keine
+pauschale Löschung unbekannter Benutzerverzeichnisse. Originaldateien werden aus
+dem Manifest wiederhergestellt; Nutzeränderungen erzwingen manuelle Klärung.
+
+## Entwicklung und Testnachweise
 
 ```bash
-python3 -m pip install --user requests "protobuf>=4.25"
-python3 -m unittest discover -s tests -v   # 33 Tests (alle synthetisch)
+python3 -m venv .venv
+.venv/bin/pip install '.[keyring]'
+.venv/bin/python -m unittest discover -s tests -v
+bash -n install.sh uninstall.sh
+# Linux, wegwerfbarer Testbenutzer empfohlen:
+bash tools/verify_linux.sh
 ```
 
-Alle Test-Fixtures sind **synthetisch** (fake VINs/Tokens, reale Protobuf-
-Schema-Instanzen). Es gibt keine echten API-Aufrufe in den Tests. Ein
-echter Smoke-Test gegen Mercedes erfordert Login-Daten und wird bewusst
-NICHT in der CI ausgeführt: `omarchy-mercedes daemon --once` nach echtem
-Login prüft den kompletten Pfad.
+Alle Unit-/Session-/Auth-Fixtures sind synthetisch und verwenden keinen echten
+Keyring. Der Linux-Runner installiert das echte Wheel in eine isolierte venv,
+führt die öffentliche CLI außerhalb des Quellverzeichnisses aus und prüft
+Kollisionen/Reinstall/Uninstall. Kein echter Mercedes-Aufruf. Details und Grenzen:
+[docs/VERIFICATION.md](docs/VERIFICATION.md).
 
-## Lizenz & Drittanbieter
+## Lizenz und KI-Mitwirkung
 
-MIT — siehe [LICENSE](LICENSE) und [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-(vendored Protobuf-Module aus `mbapi2020`, MIT).
-
-**Disclaimer**: Kein offizielles Mercedes-Benz-Produkt. Verwendung der
-inoffiziellen API auf eigenes Risiko; der Autor steht in keiner Beziehung
-zu Mercedes-Benz Group AG.
+MIT, mit vollständigen upstream MIT- und gogoproto BSD-Notices in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) und im Wheel.
+Entwicklungsprovenienz: [AI_CONTRIBUTION.md](AI_CONTRIBUTION.md).
+Keine Runtime-KI, keine behauptete menschliche Codeprüfung oder rechtliche
+Konformitätszertifizierung. Kein offizielles Mercedes-Benz-Produkt.

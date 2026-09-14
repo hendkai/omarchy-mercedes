@@ -26,7 +26,8 @@ def main(argv=None) -> int:
     p_status = sub.add_parser("status", help="zeige aktuellen Statuscache (redigiert)")
     p_status.add_argument("--json", action="store_true")
 
-    sub.add_parser("vehicles", help="Fahrzeuge im Konto anzeigen (benötigt Login)")
+    p_vehicles = sub.add_parser("vehicles", help="Fahrzeuge im Konto anzeigen (benötigt Login)")
+    p_vehicles.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
 
     p_daemon = sub.add_parser("daemon", help="Connector-Daemon starten (systemd --user nutzt dies)")
     p_daemon.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
@@ -63,7 +64,7 @@ def main(argv=None) -> int:
         except Exception as e:
             print(f"Login fehlgeschlagen: {e}", file=sys.stderr)
             return 1
-        save_session(tok)
+        save_session(tok, args.region)
         print("Login erfolgreich, Session sicher gespeichert.")
         print(json.dumps(redact(tok), indent=2))
         return 0
@@ -86,11 +87,11 @@ def main(argv=None) -> int:
         from .daemon import load_session
         from .telemetry import VehicleApi
 
-        session = load_session("eu")
+        session = load_session(args.region)
         if session is None:
             print("Nicht eingeloggt - erst 'omarchy-mercedes login'.", file=sys.stderr)
             return 2
-        api = VehicleApi(region="eu")
+        api = VehicleApi(region=args.region)
         try:
             for i, v in enumerate(api.list_vehicles(session["access_token"]), 1):
                 print(f"{i}. VIN {v.get('vin')} ({v.get('deviceCategory', '?')})")
@@ -127,7 +128,12 @@ def main(argv=None) -> int:
     if args.cmd == "logout":
         from .daemon import clear_session
 
-        clear_session()
+        try:
+            clear_session()
+        except (RuntimeError, OSError) as e:
+            print(f"Logout unvollständig: {e}", file=sys.stderr)
+            return 1
+        # clear_session publishes no-session while holding the process lock.
         print("Session gelöscht.")
         return 0
 
@@ -153,7 +159,15 @@ def main(argv=None) -> int:
         try:
             import keyring
 
-            print(f"keyring: {keyring.__version__}")
+            kr_ver = getattr(keyring, "__version__", None)
+            if not kr_ver:
+                try:
+                    from importlib.metadata import version as _v
+
+                    kr_ver = _v("keyring")
+                except Exception:
+                    kr_ver = "installiert"
+            print(f"keyring: {kr_ver}")
         except ImportError:
             print("keyring: FEHLT (optional; sonst 0600-Datei)")
         wb = shutil.which("waybar")
