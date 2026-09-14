@@ -62,6 +62,8 @@ class InstallerLangTest(unittest.TestCase):
         self.stubbin = os.path.join(self.sandbox, "stubbin")
         os.makedirs(self.stubbin)
         write_stub(self.stubbin, "python3", PYTHON3_STUB)
+        # Never contact the real user service manager, even on Linux.
+        write_stub(self.stubbin, "systemctl", "#!/bin/sh\nexit 1\n")
 
     # -- helpers -----------------------------------------------------------
 
@@ -184,6 +186,63 @@ class InstallerLangTest(unittest.TestCase):
         r = self.run_install(["--lang"])
         self.assertEqual(r.returncode, 1)
         self.assertIn("--lang requires a value", r.stderr)
+
+    def test_empty_language_is_rejected(self):
+        for args in (["--lang", ""], ["--lang="], ["--lang=", "--help"]):
+            with self.subTest(args=args):
+                r = self.run_install(args)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn("Unknown language:", r.stderr)
+                self.assertEqual(os.listdir(self.home), [])
+
+    def test_invalid_language_not_hidden_by_later_option(self):
+        r = self.run_install(["--lang", "fr", "--lang", "de"])
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Unknown language: fr", r.stderr)
+        self.assertEqual(os.listdir(self.home), [])
+
+    def test_argument_errors_use_selected_language(self):
+        for args, message in ((["--foo"], "Unbekanntes Argument"),
+                              (["--lang"], "--lang erwartet"),
+                              (["--lang", "fr"], "Unbekannte Sprache")):
+            with self.subTest(args=args):
+                r = self.run_install(["--lang", "de"] + args)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(message, r.stderr)
+                self.assertIn("[Fehler]", r.stderr)
+                self.assertEqual(os.listdir(self.home), [])
+
+    def test_help_explains_non_tty_default(self):
+        r = self.run_install(["--help"])
+        self.assertIn("Ohne Terminal: Englisch", r.stdout)
+        self.assertIn("Without a terminal: English", r.stdout)
+        self.assertEqual(os.listdir(self.home), [])
+
+    def test_pip_failure_has_translated_diagnostic(self):
+        write_stub(self.stubbin, "python3", "#!/bin/sh\nexit 42\n")
+        for lang, message in (("de", "Installation fehlgeschlagen (Exit-Code 42)"),
+                              ("en", "Installation failed (exit code 42)")):
+            with self.subTest(lang=lang):
+                r = self.run_install(["--lang", lang])
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn(message, r.stderr)
+                self.assertFalse(self.wrappers_exist())
+
+    def test_systemd_enable_failure_warns_in_both_languages(self):
+        write_stub(self.stubbin, "systemctl",
+                   '#!/bin/sh\n[ "${2:-}" = enable ] && exit 1\nexit 0\n')
+        for lang, message in (("de", "unit konnte nicht aktiviert werden"),
+                              ("en", "could not enable unit")):
+            with self.subTest(lang=lang):
+                r = self.run_install(["--lang", lang])
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn(message, r.stderr)
+
+    def test_explicit_language_skips_picker_with_tty(self):
+        rc, out = self.run_pty(args=["--lang", "en"])
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn("Sprache waehlen", out)
+        self.assertIn("Next steps:", out)
 
     # -- non-TTY -----------------------------------------------------------
 

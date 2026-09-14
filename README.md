@@ -57,7 +57,9 @@ Der Installer startet mit einer interaktiven Sprachauswahl
 wiederholt abgefragt, `Strg+D` bricht sauber ab, bevor etwas installiert
 wird). Alle Meldungen, Warnungen, Fehler und Hinweise (inkl. Waybar- und
 Login-Hinweise am Ende) erscheinen in der gewählten Sprache — technische
-Befehle und Pfade bleiben unübersetzt.
+Befehle und Pfade bleiben unübersetzt. Technische Ausgaben externer Werkzeuge
+(z. B. pip) bleiben im Original; bei einem Installationsfehler erscheint
+zusätzlich eine Fehlermeldung in der gewählten Sprache.
 
 Nichtinteraktiv (Skript/CI):
 
@@ -67,7 +69,7 @@ Nichtinteraktiv (Skript/CI):
 ./install.sh --help         # zeigt Optionen (beide Sprachen)
 ```
 
-Ohne Terminal (z. B. `curl | bash`, CI ohne `--lang`) blockiert der
+Ohne Terminal (z. B. `./install.sh </dev/null`, CI ohne `--lang`) blockiert der
 Installer nie: Er läuft auf Englisch durch und weist im Terminal auf
 `--lang de` hin (Standard Englisch, damit internationale Nutzer keine
 deutschen Meldungen bekommen).
@@ -153,7 +155,7 @@ Meist ist nichts zu konfigurieren. Optionen:
 
 ```bash
 python3 -m pip install --user requests "protobuf>=4.25"
-python3 -m unittest discover -s tests -v   # 33 Tests (alle synthetisch)
+python3 -m unittest discover -s tests -v   # synthetische Unit-Tests und isolierte Installer-/PTY-Tests
 ```
 
 Alle Test-Fixtures sind **synthetisch** (fake VINs/Tokens, reale Protobuf-

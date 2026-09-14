@@ -35,8 +35,10 @@ lang_text() { # lang_text <key> [lang] -> print the string for the given languag
         usage)              de="Verwendung: ./install.sh [OPTIONEN]";                                     en="Usage: ./install.sh [OPTIONS]" ;;
         usage_lang)         de="  --lang de|en   Installersprache: Deutsch oder Englisch";               en="  --lang de|en   installer language: German or English" ;;
         usage_default)      de="                  (ohne Angabe: interaktive Auswahl, Enter = Deutsch)";   en="                  (default: interactive picker, Enter = German)" ;;
+        usage_non_tty)      de="  Ohne Terminal: Englisch (kein Warten auf Eingabe); --lang ueberschreibt."; en="  Without a terminal: English (no input wait); override with --lang." ;;
+        err_install)        de="Installation fehlgeschlagen (Exit-Code %s); technische Diagnose siehe oben."; en="Installation failed (exit code %s); see technical diagnostics above." ;;
         usage_help)         de="  -h, --help     diese Hilfe anzeigen und beenden";                       en="  -h, --help     show this help and exit" ;;
-        err_prefix)         de="[error]";                                                              en="[error]" ;;
+        err_prefix)         de="[Fehler]";                                                              en="[error]" ;;
         err_unknown_arg)    de="Unbekanntes Argument: %s";                                               en="Unknown argument: %s" ;;
         err_lang_value)     de="--lang erwartet einen Wert: de|en";                                      en="--lang requires a value: de|en" ;;
         err_unknown_lang)   de="Unbekannte Sprache: %s (erlaubt: de, en)";                               en="Unknown language: %s (allowed: de, en)" ;;
@@ -44,8 +46,8 @@ lang_text() { # lang_text <key> [lang] -> print the string for the given languag
         err_lang_eof)       de="Keine Eingabe moeglich (EOF) - Installation abgebrochen.";               en="no input possible (EOF) - installation aborted." ;;
         err_not_repo)       de="Bitte aus dem Repository-Stammverzeichnis starten (pyproject.toml nicht gefunden)"; en="run from the repository root (pyproject.toml not found)" ;;
         err_no_python)      de="python3 nicht gefunden";                                                 en="python3 not found" ;;
-        warn_prefix)        de="[warn]";                                                                en="[warn]" ;;
-        install_prefix)     de="[install]";                                                             en="[install]" ;;
+        warn_prefix)        de="[Warnung]";                                                                en="[warn]" ;;
+        install_prefix)     de="[Installation]";                                                             en="[install]" ;;
         non_tty_hint)       de="kein Terminal erkannt - Englisch wird verwendet; Sprache waehlbar mit: ./install.sh --lang de"; en="no terminal detected - using English; choose a language with: ./install.sh --lang de" ;;
         step_python)        de="installiere python-paket (benutzer) ...";                                en="installing python package (user) ..." ;;
         step_python_fb)     de="PEP-668-Distribution erkannt - nutze --break-system-packages";          en="PEP 668 distro detected - using --break-system-packages" ;;
@@ -54,7 +56,7 @@ lang_text() { # lang_text <key> [lang] -> print the string for the given languag
         warn_unit_enable)   de="unit konnte nicht aktiviert werden";                                     en="could not enable unit" ;;
         warn_no_systemd)    de="systemd --user nicht verfuegbar; daemon manuell starten (siehe README)"; en="systemd --user unavailable; start the daemon manually (see README)" ;;
         step_cfgd)          de="installiere waybar-config-snippet (config.d) ...";                       en="installing waybar config snippet (config.d) ..." ;;
-        step_cfg_manual)    de="waybar-config gefunden in %s - modul manuell einbinden";                 en="waybar config found at %s - adding module include manually" ;;
+        step_cfg_manual)    de="waybar-config gefunden in %s - modul manuell einbinden";                 en="waybar config found at %s - manual module inclusion required" ;;
         warn_cfg_manual1)   de="automatisches Einbinden nicht moeglich: bitte 'custom/mercedes' aus";    en="automatic include not possible: please add 'custom/mercedes' from" ;;
         warn_cfg_manual2)   de="waybar/config.d/mercedes.jsonc manuell in %s ergaenzen.";                en="waybar/config.d/mercedes.jsonc manually to %s." ;;
         step_styles_append) de="styles an style.css angehaengt (backup erstellt)";                        en="styles appended to style.css (backup created)" ;;
@@ -112,9 +114,11 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --lang)
             [ $# -ge 2 ] || die_arg err_lang_value
-            LANG_CODE="$2"; shift 2 ;;
+            case "$2" in de|en) LANG_CODE="$2" ;; *) die_arg err_unknown_lang "$2" ;; esac
+            shift 2 ;;
         --lang=*)
-            LANG_CODE="${1#--lang=}"; shift ;;
+            case "${1#--lang=}" in de|en) LANG_CODE="${1#--lang=}" ;; *) die_arg err_unknown_lang "${1#--lang=}" ;; esac
+            shift ;;
         -h|--help)
             SHOW_HELP="yes"; shift ;;
         *)
@@ -143,6 +147,7 @@ if [ "$SHOW_HELP" = "yes" ]; then
         printf '%s\n' "$(lang_text usage_lang "$l")"
         printf '%s\n' "$(lang_text usage_default "$l")"
         printf '%s\n' "$(lang_text usage_help "$l")"
+        printf '%s\n' "$(lang_text usage_non_tty "$l")"
         if [ "$l" = "de" ]; then printf '\n'; fi
     done
     exit 0
@@ -185,6 +190,9 @@ fi
 if [ "$INTERACTIVE" = "yes" ] && [ "$PICKER_USED" = "no" ]; then
     warn "$(lang_text non_tty_hint)"
 fi
+
+trap 'rc=$?; die "$(lang_fmt err_install "$rc")"' ERR
+set -E
 
 backup_file() {
     local f="$1"
