@@ -8,9 +8,11 @@ ohne Home Assistant, ohne Cloud-Dienstleister dazwischen.
 🚗 82%          🔌 82%          🚗 ▮▮▮▮▮▮▮▮▯▯          🚗 Anmeldung erforderlich
 ```
 
-- **Omarchy-Shell-Plugin**: Nativ in der Omarchy/Quickshell-Bar (mitte, vor
-  der Uhr). Anzeige wahlweise als Prozent (`🚗 82%`) oder Ladebalken
-  (`🚗 ▮▮▮▮▮▮▮▮▯▯`) — umstellbar in den Plugin-Einstellungen.
+- **Omarchy-Shell-Plugin**: Silberner Vektor-Stern, lesbare Prozentzahl,
+  dezente Reichweite und Ladebalken mit reserviertem Platz vor der Uhr.
+  Linksklick öffnet Position/Anzeige/Reichweite; Rechtsklick den CLI-Status.
+  [Details, Zustandsanzeigen und Tests](omarchy-plugin/README.md).
+  Die Emoji-Beispiele unten beziehen sich auf das unveränderte Waybar-Modul.
 - **Waybar-Modul** (für Nicht-Omarchy-Distros): Snippets unter `waybar/`.
 - **Read-only**: Das Modul enthält keinerlei Fahrzeug-Befehle (kein Lock,
   kein KlimaN, kein Wakeup). Nur Lesen von Ladestand, Reichweite, Lade­
@@ -26,8 +28,8 @@ ohne Home Assistant, ohne Cloud-Dienstleister dazwischen.
 > Mercedes-Benz Mobile-SDK-API (dieselbe, die auch die beliebte
 > Home-Assistant-Integration `mbapi2020` verwendet). Sie ist nicht
 > offiziell dokumentiert und kann sich jederzeit ändern oder (selten)
-> Konten blockieren. Mercedes-Logos werden nicht verwendet; dies ist keine
-> offizielle Mercedes-Benz-App. Ein offizieller "Car Connect"-Zugang mit
+> Konten blockieren. Der Drei-Stern im Widget kennzeichnet das Fahrzeug;
+> dies ist keine offizielle oder von Mercedes-Benz unterstützte App. Ein offizieller "Car Connect"-Zugang mit
 > eigenen API-Credentials ist für Privatkonten derzeit nicht verfügbar
 > (Developer-Programm für BYOCAR-Pools eingestellt).
 

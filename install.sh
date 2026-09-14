@@ -108,35 +108,54 @@ fi
 if [[ -d "$HOME/.config/omarchy" ]]; then
     log "installing Omarchy bar plugin ..."
     PLUG_DIR="$HOME/.config/omarchy/plugins/hendkai.omarchy-mercedes"
+    if [[ -d "$PLUG_DIR" ]]; then
+        mkdir -p "$BACKUP_DIR"
+        cp -a "$PLUG_DIR" "$BACKUP_DIR/plugin-$(date +%s%N)"
+    fi
     mkdir -p "$PLUG_DIR"
-    cp "$REPO_DIR"/omarchy-plugin/manifest.json \
-       "$REPO_DIR"/omarchy-plugin/BarWidget.qml \
-       "$REPO_DIR"/omarchy-plugin/LICENSE \
-       "$REPO_DIR"/omarchy-plugin/README.md "$PLUG_DIR/"
+    # Ship the full bundle, including the settings popup and vector assets.
+    cp -a "$REPO_DIR/omarchy-plugin/." "$PLUG_DIR/"
     # register the widget in shell.json (center, before the clock) — idempotent
     /usr/bin/python3 - "$HOME/.config/omarchy/shell.json" <<'PYEOF' || warn "konnte shell.json nicht anpassen - bitte Widget manuell ergaenzen"
 import json, sys, shutil, time
 
+import os, tempfile
 path = sys.argv[1]
-shutil.copy2(path, path + ".omarchy-mercedes-bak")
 with open(path) as f:
     d = json.load(f)
-layout = d.get("bar", {}).get("layout", {})
+original = json.dumps(d, sort_keys=True)
+layout = d.setdefault("bar", {}).setdefault("layout", {})
 plugin_id = "hendkai.omarchy-mercedes"
-entry = {"id": plugin_id}
-
+found = False
 for section in ("left", "center", "right"):
-    lst = layout.get(section) or []
-    layout[section] = [x for x in lst if x.get("id") != plugin_id]
-
-center = layout.setdefault("center", [])
-clock_idx = next((i for i, x in enumerate(center)
-                  if x.get("id") == "omarchy.clock"), len(center))
-center.insert(clock_idx, entry)
-
-with open(path, "w") as f:
-    json.dump(d, f, indent=2, ensure_ascii=False)
-print("shell.json: widget registered (center)")
+    if section not in layout:
+        continue
+    kept = []
+    for entry in layout[section]:
+        if entry.get("id") == plugin_id:
+            if found:
+                continue
+            found = True
+        kept.append(entry)
+    layout[section] = kept
+if not found:
+    center = layout.setdefault("center", [])
+    clock_idx = next((i for i, x in enumerate(center)
+                      if x.get("id") == "omarchy.clock"), len(center))
+    center.insert(clock_idx, {"id": plugin_id})
+if json.dumps(d, sort_keys=True) != original:
+    shutil.copy2(path, path + ".omarchy-mercedes-bak-" + str(time.time_ns()))
+    fd, temporary = tempfile.mkstemp(prefix=".shell-mercedes-", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.chmod(temporary, os.stat(path).st_mode & 0o777)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+print("shell.json: widget registered (existing settings and position preserved)")
 PYEOF
     echo "  -> Omarchy-Shell laedt das Plugin automatisch neu (hot reload)."
 else

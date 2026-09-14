@@ -46,10 +46,10 @@
         "label": "Display mode",
         "defaultValue": "percent",
         "enum": [
-          { "value": "percent", "label": "Percent (🚗 55%)" },
-          { "value": "bar", "label": "Battery bar (🚗 ▮▮▮▯▯)" }
+          { "value": "percent", "label": "Percent" },
+          { "value": "bar", "label": "Charge bar" }
         ],
-        "description": "Show the state of charge as a percentage or as a charge-level bar."
+        "description": "Show either the numeric percentage or the charge-level bar."
       }
     ]
   }
