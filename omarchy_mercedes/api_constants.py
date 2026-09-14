@@ -51,16 +51,19 @@ RIS_OS_NAME = "ios"
 RIS_OS_VERSION = "26.3"
 APPLICATION_NAME = "mycar-store-ece"  # eu; us/ap variants exist upstream
 
-# Vehicle attribute keys we read (all read-only)
-ATTR_STATE_OF_CHARGE = "stateofcharge"
-ATTR_RANGE_ELECTRIC = "rangeelectric"
-ATTR_CHARGING_ACTIVE = "chargingactive"
-ATTR_CHARGING_STATUS = "chargingstatus"
-ATTR_CHARGING_POWER = "chargingpower"
-ATTR_END_OF_CHARGE_TIME = "endofchargetime"
-ATTR_ODOMETER = "odometer"
-ATTR_OUTSIDE_TEMP = "outsideTemperature"
-ATTR_TCU_CONNECTION = "tcu_connection_state_low_channel"
+# Vehicle attribute keys we read (all read-only).
+# Names follow the VehicleStatusUpdate fields observed live on the EU
+# widget endpoint (2026-09); first entry of each tuple is the current
+# field name, later ones are fallbacks from older mbapi2020 shapes.
+ATTR_STATE_OF_CHARGE = ("soc", "stateofcharge")
+ATTR_RANGE_ELECTRIC = ("rangeelectric", "range_electric")
+ATTR_CHARGING_ACTIVE = ("chargingactive",)
+ATTR_CHARGING_STATUS = ("chargingstatus",)
+ATTR_CHARGING_POWER = ("chargingpower",)
+ATTR_END_OF_CHARGE_TIME = ("endofchargetime",)
+ATTR_ODOMETER = ("odometer",)
+ATTR_OUTSIDE_TEMP = ("outsideTemperature",)
+ATTR_TCU_CONNECTION = ("tcu_connection_state_low_channel",)
 
 # Fallback if widget/app returns no unit info
 DEFAULT_RANGE_UNIT = "km"

@@ -34,23 +34,22 @@ NOW_S = 1800000000  # fixed epoch for deterministic tests
 
 
 def build_vep_update(soc=82, range_km=315, charging=True, soc_ts_ms=None, emit_ts_ms=None):
-    """Build a SYNTHETIC VEPUpdate protobuf message (test fixture)."""
+    """Build a SYNTHETIC VehicleStatusUpdate protobuf (live observed format)."""
     from omarchy_mercedes.vendored import vehicle_events_pb2 as vep
 
-    m = vep.VEPUpdate()
-    m.vin = "SYNTHETIC00000000"  # fake VIN, never a real one
-    ts = soc_ts_ms or (NOW_S * 1000 - 120_000)  # default: data 2 min old
-    m.attributes["stateofcharge"].int_value = soc
-    m.attributes["stateofcharge"].timestamp_in_ms = ts
-    m.attributes["rangeelectric"].int_value = range_km
-    m.attributes["rangeelectric"].timestamp_in_ms = ts
-    m.attributes["chargingactive"].bool_value = charging
-    m.attributes["chargingactive"].timestamp_in_ms = ts
-    m.attributes["chargingstatus"].string_value = "CHARGING"
-    m.attributes["chargingstatus"].timestamp_in_ms = ts
-    m.attributes["chargingpower"].double_value = 11.0
-    m.attributes["chargingpower"].timestamp_in_ms = ts
-    m.emit_timestamp_in_ms = emit_ts_ms or ts
+    m = vep.VehicleStatusUpdate()
+    m.fin_or_vin = "SYNTHETIC00000000"  # fake VIN, never a real one
+    ts_s = (soc_ts_ms // 1000) if soc_ts_ms else (NOW_S - 120)  # data 2 min old
+    ts_ms = soc_ts_ms or ts_s * 1000
+    m.soc.value = soc
+    m.soc.metadata.timestamp.seconds = ts_ms // 1000
+    m.rangeelectric.value = range_km
+    m.rangeelectric.metadata.timestamp.seconds = ts_ms // 1000
+    m.chargingactive.value = charging
+    m.chargingactive.metadata.timestamp.seconds = ts_ms // 1000
+    m.chargingstatus.value = vep.CHARGINGSTATUS_CHARGING
+    m.chargingstatus.metadata.timestamp.seconds = ts_ms // 1000
+    m.vtime.value = emit_ts_ms // 1000 if emit_ts_ms else ts_s
     return m.SerializeToString()
 
 
@@ -92,7 +91,7 @@ class TestProtobufDecode(unittest.TestCase):
     def test_decode_synthetic_fixture(self):
         blob = build_vep_update(soc=42, range_km=210, charging=False)
         out = telemetry.decode_vehicle_attributes(blob)
-        self.assertEqual(out["attributes"]["stateofcharge"]["value"], 42)
+        self.assertEqual(out["attributes"]["soc"]["value"], 42)
         self.assertEqual(out["attributes"]["rangeelectric"]["value"], 210)
         self.assertFalse(out["attributes"]["chargingactive"]["value"])
 
@@ -110,13 +109,13 @@ class TestExtractStatus(unittest.TestCase):
         self.assertEqual(st["soc_percent"], 77)
         self.assertEqual(st["range_km"], 280)
         self.assertTrue(st["charging"])
-        self.assertEqual(st["charging_power_kw"], 11.0)
+        self.assertIsNone(st["charging_power_kw"])  # not delivered by VehicleStatusUpdate
 
     def test_extract_missing_soc_is_error(self):
         from omarchy_mercedes.vendored import vehicle_events_pb2 as vep
 
-        m = vep.VEPUpdate()
-        m.attributes["odometer"].int_value = 12345
+        m = vep.VehicleStatusUpdate()
+        m.overall_range.value = 421.0
         st = extract_status(telemetry.decode_vehicle_attributes(m.SerializeToString()), NOW_S * 1000)
         self.assertEqual(st["state"], state.STATE_ERROR)
 

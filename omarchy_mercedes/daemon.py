@@ -37,6 +37,17 @@ from .telemetry import ApiError, VehicleApi
 
 log = logging.getLogger("omarchy-mercedes")
 
+
+def first_attr(data: dict, names) -> dict | None:
+    """Return the first matching attribute entry (names: str or tuple)."""
+    if isinstance(names, str):
+        names = (names,)
+    attrs = data.get("attributes") or {}
+    for n in names:
+        if n in attrs:
+            return attrs[n]
+    return None
+
 DATA_DIR = Path(
     os.environ.get("OMARCHY_MERCEDES_DATA_DIR", "~/.local/share/omarchy-mercedes")
 ).expanduser()
@@ -104,10 +115,6 @@ def token_is_expired(session: dict, slack_s: int = 60) -> bool:
     return session.get("expires_at", 0) - time.time() < slack_s
 
 
-def first_attr(data: dict, name: str) -> dict | None:
-    return (data.get("attributes") or {}).get(name)
-
-
 def extract_status(data: dict, fetched_at_ms: int) -> dict:
     """Map widget attributes -> redacted status cache entry."""
     soc = first_attr(data, ATTR_STATE_OF_CHARGE)
@@ -117,15 +124,20 @@ def extract_status(data: dict, fetched_at_ms: int) -> dict:
     chp = first_attr(data, ATTR_CHARGING_POWER)
     ect = first_attr(data, ATTR_END_OF_CHARGE_TIME)
 
-    # newest attribute timestamp = vehicle data time (ground truth for age)
+    # vehicle data time: newest attribute timestamp we have; the
+    # VehicleStatusUpdate carries a global vtime fallback
     ts_list = [a.get("ts_ms") for a in (soc, rng, cha, chs, chp, ect) if a and a.get("ts_ms")]
     vehicle_ts = max(t for t in ts_list if t is not None) if ts_list else None
+    if vehicle_ts is None:
+        vt = first_attr(data, "vtime")
+        if vt and isinstance(vt.get("value"), int):
+            vehicle_ts = vt["value"] * 1000  # vtime is in seconds
 
     status = {
         "state": STATE_OK,
         "soc_percent": soc["value"] if soc and isinstance(soc.get("value"), int) else None,
         "range_km": rng["value"] if rng and isinstance(rng.get("value"), (int, float)) else None,
-        "range_unit": (rng or {}).get("display_value") or "km",
+        "range_unit": "km",  # EU accounts are km; display_value holds the number, not a unit
         "charging": bool(cha["value"]) if cha and cha.get("value") is not None else False,
         "charging_power_kw": chp["value"] if chp and isinstance(chp.get("value"), (int, float)) else None,
         "end_of_charge_time": (ect or {}).get("display_value"),
