@@ -5,9 +5,13 @@ Fahrzeuge mit Mercedes me connect) direkt in der **Omarchy/Waybar-Taskleiste** �
 ohne Home Assistant, ohne Cloud-Dienstleister dazwischen.
 
 ```
-🚗 82%          🔌 82%          🚗 82% (?)       🚗 Anmeldung erforderlich
+🚗 82%          🔌 82%          🚗 ▮▮▮▮▮▮▮▮▯▯          🚗 Anmeldung erforderlich
 ```
 
+- **Omarchy-Shell-Plugin**: Nativ in der Omarchy/Quickshell-Bar (mitte, vor
+  der Uhr). Anzeige wahlweise als Prozent (`🚗 82%`) oder Ladebalken
+  (`🚗 ▮▮▮▮▮▮▮▮▯▯`) — umstellbar in den Plugin-Einstellungen.
+- **Waybar-Modul** (für Nicht-Omarchy-Distros): Snippets unter `waybar/`.
 - **Read-only**: Das Modul enthält keinerlei Fahrzeug-Befehle (kein Lock,
   kein KlimaN, kein Wakeup). Nur Lesen von Ladestand, Reichweite, Lade­
   status, Ladeleistung.
@@ -51,9 +55,10 @@ cd omarchy-mercedes
 ```
 
 Der Installer installiert als Benutzer (kein root): Python-Paket, Wrapper in
-`~/.local/bin`, systemd-`--user`-Unit, Waybar-Snippets. Vorhandene Waybar-
-Konfiguration wird gesichert und nur gezielt ergänzt (`config.d/`-Snippet bzw.
-Backup + Hinweis). Rollback: `./uninstall.sh`.
+`~/.local/bin`, systemd-`--user`-Unit, das Omarchy-Shell-Plugin
+(`omarchy-plugin/` → `~/.config/omarchy/plugins/`, inkl. Registrierung in
+`shell.json`) sowie — falls Waybar vorhanden — Waybar-Snippets. Vorhandene
+Konfiguration wird gesichert und nur gezielt ergänzt. Rollback: `./uninstall.sh`.
 
 Abhängigkeiten: `python3` (≥ 3.9), `requests`, `protobuf` (>= 4.25),
 optional `keyring` (Secret Service). Der Installer installiert das Paket per

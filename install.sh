@@ -104,6 +104,45 @@ else
     warn "waybar nicht gefunden (ok auf anderen Hosts); snippets liegen unter waybar/"
 fi
 
+# 5. Omarchy shell plugin (Quickshell bar; no Waybar required)
+if [[ -d "$HOME/.config/omarchy" ]]; then
+    log "installing Omarchy bar plugin ..."
+    PLUG_DIR="$HOME/.config/omarchy/plugins/hendkai.omarchy-mercedes"
+    mkdir -p "$PLUG_DIR"
+    cp "$REPO_DIR"/omarchy-plugin/manifest.json \
+       "$REPO_DIR"/omarchy-plugin/BarWidget.qml \
+       "$REPO_DIR"/omarchy-plugin/LICENSE \
+       "$REPO_DIR"/omarchy-plugin/README.md "$PLUG_DIR/"
+    # register the widget in shell.json (center, before the clock) — idempotent
+    /usr/bin/python3 - "$HOME/.config/omarchy/shell.json" <<'PYEOF' || warn "konnte shell.json nicht anpassen - bitte Widget manuell ergaenzen"
+import json, sys, shutil, time
+
+path = sys.argv[1]
+shutil.copy2(path, path + ".omarchy-mercedes-bak")
+with open(path) as f:
+    d = json.load(f)
+layout = d.get("bar", {}).get("layout", {})
+plugin_id = "hendkai.omarchy-mercedes"
+entry = {"id": plugin_id}
+
+for section in ("left", "center", "right"):
+    lst = layout.get(section) or []
+    layout[section] = [x for x in lst if x.get("id") != plugin_id]
+
+center = layout.setdefault("center", [])
+clock_idx = next((i for i, x in enumerate(center)
+                  if x.get("id") == "omarchy.clock"), len(center))
+center.insert(clock_idx, entry)
+
+with open(path, "w") as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+print("shell.json: widget registered (center)")
+PYEOF
+    echo "  -> Omarchy-Shell laedt das Plugin automatisch neu (hot reload)."
+else
+    log "kein Omarchy; Waybar-Snippets liegen unter waybar/ (weiter aktiv)"
+fi
+
 log "fertig."
 echo
 echo "Naechste Schritte:"

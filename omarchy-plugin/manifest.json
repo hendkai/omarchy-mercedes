@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "hendkai.omarchy-mercedes",
+  "name": "Mercedes SoC",
+  "version": "0.1.0",
+  "author": "hendkai",
+  "license": "MIT",
+  "description": "Mercedes-Benz state of charge in the bar — read-only connector daemon writes a local status cache, this widget renders it. No vehicle commands, no secrets in the bar process.",
+  "tags": ["ev", "mercedes", "battery", "soc"],
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Mercedes SoC",
+    "description": "Battery percentage, range and charging state of your Mercedes EQ",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "staleAfterSec": 1800,
+      "showRange": true,
+      "displayMode": "percent"
+    },
+    "schema": [
+      {
+        "key": "staleAfterSec",
+        "type": "integer",
+        "label": "Stale after (seconds)",
+        "min": 300,
+        "max": 7200,
+        "step": 300,
+        "defaultValue": 1800,
+        "description": "Mark vehicle data stale when it is older than this."
+      },
+      {
+        "key": "showRange",
+        "type": "boolean",
+        "label": "Show range",
+        "defaultValue": true,
+        "description": "Show the electric range next to the battery percentage."
+      },
+      {
+        "key": "displayMode",
+        "type": "string",
+        "label": "Display mode",
+        "defaultValue": "percent",
+        "enum": [
+          { "value": "percent", "label": "Percent (🚗 55%)" },
+          { "value": "bar", "label": "Battery bar (🚗 ▮▮▮▯▯)" }
+        ],
+        "description": "Show the state of charge as a percentage or as a charge-level bar."
+      }
+    ]
+  }
+}
