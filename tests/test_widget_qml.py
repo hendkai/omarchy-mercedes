@@ -93,7 +93,11 @@ TestCase {
   var fullWidth=slot.width
   widget.status={state:"no-session",written_at_ms:now}; wait(100)
   compare(slot.width,fullWidth,"state changes must not move the adjacent clock")
-  verify(findChild(widget,"mercedesStar")!==null,"vector star replaces emoji")
+  var icon=findChild(widget,"electricVehicleIcon")
+  verify(icon!==null,"original neutral EV vector replaces brand imagery")
+  verify(icon.source.toString().endsWith("/assets/electric-vehicle.svg"))
+  tryCompare(icon,"status",Image.Ready)
+  verify(icon.sourceSize.width>0 && icon.sourceSize.height>0)
   widget.open(); wait(10); verify(widget.opened,"settings panel opens")
   widget.close(); verify(!widget.opened)
   widget.bar=fakeBar

@@ -21,3 +21,23 @@ documented behavior of that project (no code copied).
 
 The vendored `*_pb2.py` files are generated with protoc and depend on the
 `protobuf` Python package (BSD 3-Clause, Google LLC).
+
+## Runtime dependencies
+
+Dependencies are installed separately, not relicensed by this repository:
+`requests` (Apache-2.0), `protobuf` (BSD-3-Clause), and optional `keyring` (MIT).
+The native widget runs in Omarchy/Quickshell and uses Qt; those projects retain
+their own licenses. Consult the licenses shipped with the versions you install.
+
+## Original artwork and trademarks
+
+`omarchy-plugin/assets/electric-vehicle.svg` is original artwork created for this
+project: a neutral car silhouette with a battery indicator and silver gradient.
+It is released under the project's [MIT license](LICENSE), not a third-party
+asset license. It contains no manufacturer logo or emblem, embeds no external
+images or fonts, and uses no downloaded brand assets.
+
+Mercedes-Benz names and trademarks belong to their respective owners. The MIT
+license grants no trademark rights, brand approval, or endorsement. This is an
+unofficial integration with no claimed affiliation; no official Mercedes-Benz
+artwork is included or licensed by this project.

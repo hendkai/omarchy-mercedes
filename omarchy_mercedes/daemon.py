@@ -15,10 +15,13 @@ Runtime contract (from the task):
 from __future__ import annotations
 
 import argparse
+import fcntl
+from contextlib import contextmanager
 import json
 import logging
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -31,9 +34,9 @@ from .api_constants import (
     ATTR_RANGE_ELECTRIC,
     ATTR_STATE_OF_CHARGE,
 )
-from .oauth_client import AuthError, MercedesOAuthClient, redact
+from .oauth_client import AuthError, InvalidSessionError, MercedesOAuthClient, redact
 from .state import STATE_ERROR, STATE_NO_SESSION, STATE_OK, now_ms, write_status
-from .telemetry import ApiError, VehicleApi
+from .telemetry import ApiError, UnauthorizedError, VehicleApi
 
 log = logging.getLogger("omarchy-mercedes")
 
@@ -62,8 +65,39 @@ DEFAULT_STALE_AFTER_S = 1800
 MIN_POLL_S = 60  # never hammer the backend faster than this
 
 
+@contextmanager
+def _session_lock():
+    """One stable flock inode shared by CLI login/logout and daemon writers.
+
+    Each call opens its own descriptor, serializing threads as well as processes.
+    Never unlink the lock file, and never hold this lock across network requests.
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fd = os.open(DATA_DIR / "session.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+_UNCONDITIONAL = object()
+
+
 def load_session(region: str) -> dict | None:
-    """Load session from keyring (preferred) or 0600 file (fallback)."""
+    with _session_lock():
+        return _load_session(region)
+
+
+def _load_session(region: str) -> dict | None:
+    """A retained fallback is newer than a keyring write that failed."""
+    if SESSION_FILE.exists():
+        try:
+            if SESSION_FILE.stat().st_mode & 0o777 != 0o600:
+                os.chmod(SESSION_FILE, 0o600)
+            return json.loads(SESSION_FILE.read_text())
+        except (OSError, ValueError) as e:
+            log.warning("session file unreadable: %s", type(e).__name__)
     try:
         import keyring
 
@@ -74,24 +108,31 @@ def load_session(region: str) -> dict | None:
             except ValueError:
                 log.warning("keyring session undecodable; ignoring")
     except Exception:
-        pass  # keyring not installed / no Secret Service: fall back to file
-    if SESSION_FILE.exists():
-        try:
-            if SESSION_FILE.stat().st_mode & 0o777 != 0o600:
-                os.chmod(SESSION_FILE, 0o600)
-            return json.loads(SESSION_FILE.read_text())
-        except (OSError, ValueError) as e:
-            log.warning("session file unreadable: %s", type(e).__name__)
+        pass  # keyring not installed / no Secret Service
     return None
 
 
-def save_session(session: dict) -> None:
-    """Persist session to keyring when possible; always also 0600 file."""
+def save_session(session: dict, *, expected=_UNCONDITIONAL) -> bool:
+    """Atomically compare and save; login callers intentionally replace any session."""
+    with _session_lock():
+        if expected is not _UNCONDITIONAL and _load_session("") != expected:
+            return False
+        _save_session(session)
+        return True
+
+
+def _save_session(session: dict) -> None:
+    """Persist session to keyring when possible, with an atomic 0600 fallback."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = SESSION_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(session))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, SESSION_FILE)
+    # mkstemp creates exclusively with mode 0600, before any secret is written.
+    fd, name = tempfile.mkstemp(prefix=".session-", suffix=".tmp", dir=DATA_DIR)
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(session))
+        os.replace(tmp, SESSION_FILE)
+    finally:
+        tmp.unlink(missing_ok=True)
     try:
         import keyring
 
@@ -101,7 +142,16 @@ def save_session(session: dict) -> None:
         pass  # file fallback already written
 
 
-def clear_session() -> None:
+def clear_session(*, expected=_UNCONDITIONAL) -> bool:
+    """Clear only the observed session when called by an in-flight refresh."""
+    with _session_lock():
+        if expected is not _UNCONDITIONAL and _load_session("") != expected:
+            return False
+        _clear_session()
+        return True
+
+
+def _clear_session() -> None:
     SESSION_FILE.unlink(missing_ok=True)
     try:
         import keyring
@@ -124,10 +174,9 @@ def extract_status(data: dict, fetched_at_ms: int) -> dict:
     chp = first_attr(data, ATTR_CHARGING_POWER)
     ect = first_attr(data, ATTR_END_OF_CHARGE_TIME)
 
-    # vehicle data time: newest attribute timestamp we have; the
-    # VehicleStatusUpdate carries a global vtime fallback
-    ts_list = [a.get("ts_ms") for a in (soc, rng, cha, chs, chp, ect) if a and a.get("ts_ms")]
-    vehicle_ts = max(t for t in ts_list if t is not None) if ts_list else None
+    # Freshness describes the displayed SOC, not newer unrelated attributes.
+    # Use global vehicle time only when SOC has no per-attribute timestamp.
+    vehicle_ts = soc.get("ts_ms") if soc else None
     if vehicle_ts is None:
         vt = first_attr(data, "vtime")
         if vt and isinstance(vt.get("value"), int):
@@ -163,51 +212,67 @@ def run_loop(args) -> int:
     oauth = MercedesOAuthClient(region=args.region, timeout=args.timeout)
     api = VehicleApi(region=args.region, timeout=args.timeout)
 
-    session = load_session(args.region)
-    if session is None:
-        log.warning("no session - run 'omarchy-mercedes login' first")
-        write_status({"state": STATE_NO_SESSION, "written_at_ms": now_ms()})
-        if args.once:
-            return 2
-        time.sleep(poll_s)
-
     backoff_s = 0
     while True:
         fetched = now_ms()
+        exit_code = 1
         try:
+            # Login/logout runs in another process; reread at each poll.
+            session = load_session(args.region)
             if session is None:
-                raise AuthError("no session")
+                log.warning("no session - run 'omarchy-mercedes login' first")
+                write_status({"state": STATE_NO_SESSION, "written_at_ms": now_ms()})
+                if args.once:
+                    return 2
+                time.sleep(poll_s)
+                continue
+            refreshed = False
             if token_is_expired(session):
                 log.info("access token expired - refreshing")
-                session = oauth.refresh(session["refresh_token"])
-                save_session(session)
+                replacement = oauth.refresh(session["refresh_token"])
+                if not save_session(replacement, expected=session):
+                    raise AuthError("Session changed; retrying next poll")
+                session = replacement
+                refreshed = True
                 log.info("token refreshed (rotated=%s)", session.get("refresh_rotated"))
 
-            vehicles = api.list_vehicles(session["access_token"])
-            if not vehicles:
-                raise ApiError("no vehicles in account")
-            vin = args.vin
-            if not vin:
-                vin = vehicles[0].get("vin")
-            if not vin:
-                raise ApiError("account vehicles lack VIN field")
-
-            data = api.get_vehicle_attributes(vin, session["access_token"])
+            for attempt in range(2):
+                try:
+                    vehicles = api.list_vehicles(session["access_token"])
+                    if not vehicles:
+                        raise ApiError("no vehicles in account")
+                    vin = args.vin or vehicles[0].get("vin")
+                    if not vin:
+                        raise ApiError("account vehicles lack VIN field")
+                    data = api.get_vehicle_attributes(vin, session["access_token"])
+                    break
+                except UnauthorizedError:
+                    if attempt or refreshed:
+                        raise
+                    replacement = oauth.refresh(session["refresh_token"])
+                    if not save_session(replacement, expected=session):
+                        raise AuthError("Session changed; retrying next poll")
+                    session = replacement
+                    refreshed = True
             status = extract_status(data, fetched)
             write_status(status)
+            exit_code = 0 if status["state"] == STATE_OK else 1
             log.debug("status written: %s", json.dumps(redact(status)))
             backoff_s = 0
 
-        except AuthError as e:
-            hint = "Anmeldung erforderlich" if "relogin" in str(e) or "401" in str(e) else f"Auth: {type(e).__name__}"
-            if "relogin" in str(e) or "rejected" in str(e) or "401" in str(e):
-                clear_session()
+        except InvalidSessionError:
+            exit_code = 2
+            if clear_session(expected=session):
                 session = None
                 write_status({"state": STATE_NO_SESSION, "written_at_ms": now_ms()})
                 log.warning("session revoked - login required")
             else:
-                write_status({"state": STATE_ERROR, "error_hint": hint, "fetched_at_ms": fetched, "written_at_ms": now_ms()})
-                log.warning("auth error: %s", e)
+                exit_code = 1
+                write_status({"state": STATE_ERROR, "error_hint": "Session changed; retrying next poll",
+                              "written_at_ms": now_ms()})
+        except AuthError as e:
+            write_status({"state": STATE_ERROR, "error_hint": f"Auth: {type(e).__name__}", "fetched_at_ms": fetched, "written_at_ms": now_ms()})
+            log.warning("auth error: %s", e)
         except ApiError as e:
             write_status({"state": STATE_ERROR, "error_hint": str(e), "fetched_at_ms": fetched, "written_at_ms": now_ms()})
             log.warning("api error: %s", e)
@@ -216,7 +281,7 @@ def run_loop(args) -> int:
             log.exception("unexpected error")
 
         if args.once:
-            return 0
+            return exit_code
         # exponential backoff on errors, fixed cadence otherwise
         if backoff_s:
             time.sleep(min(backoff_s, args.backoff_max))

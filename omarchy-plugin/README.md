@@ -2,13 +2,21 @@
 
 Read-only Quickshell widget for [omarchy-mercedes](../README.md). Reads
 `~/.local/state/omarchy-mercedes/status.json`; no network, login or tokens
-in the bar process. The silver three-point star is a bundled vector, not
+in the bar process. The silver car-and-battery icon is original neutral vector
+artwork released under the project's MIT license, not a manufacturer logo,
 an emoji or a font dependency. This is an unofficial integration.
 
 ## Install / update
 
-`install.sh` ships the **entire directory**, including `SettingsPanel.qml`
-and `assets/`. Existing plugin files are backed up. Reinstallation preserves
+For marketplace installation, daemon setup, updates and removal, follow the
+[repository README](../README.md#install-marketplace--native-omarchy). The root
+manifest references this directory; Omarchy clones the whole repository but runs
+**no installer hooks**. Do not run the legacy installer in that managed checkout.
+
+For legacy standalone installations, `install.sh` ships the **entire directory**, including `SettingsPanel.qml`
+and `assets/`, and generates a flattened manifest from the canonical root
+manifest. A second checked-in manifest is intentionally absent: the marketplace
+requires exactly one root manifest for new submissions. Existing plugin files are backed up. Reinstallation preserves
 the first existing layout entry, all its settings and its position; accidental
 duplicates are removed. Only a new registration is placed before the clock.
 The installer does not start the connector or perform a login.
@@ -25,7 +33,7 @@ The installer does not start the connector or perform a login.
   exposed in Omarchy's plugin schema.
 
 Fresh: neutral foreground. Charging: accent color and `+`. Stale: amber and
-`~`; old range is not presented as fresh. Error: `!`. No session: `!` with a localized sign-in hint in the tooltip. Offline: dimmed star and `—`. Full explanations remain in the tooltip.
+`~`; old range is not presented as fresh. Error: `!`. No session: `!` with a localized sign-in hint in the tooltip. Offline: dimmed vehicle icon and `—`. Full explanations remain in the tooltip.
 
 ## Layout contract and verification
 

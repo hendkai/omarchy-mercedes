@@ -115,6 +115,21 @@ if [[ -d "$HOME/.config/omarchy" ]]; then
     mkdir -p "$PLUG_DIR"
     # Ship the full bundle, including the settings popup and vector assets.
     cp -a "$REPO_DIR/omarchy-plugin/." "$PLUG_DIR/"
+    # One canonical root manifest for marketplace submissions. Rewrite only
+    # entry-point paths for this legacy flattened copy layout.
+    /usr/bin/python3 - "$REPO_DIR/manifest.json" "$PLUG_DIR/manifest.json" <<'PYMANIFEST'
+import json, sys
+from pathlib import PurePosixPath
+with open(sys.argv[1]) as source:
+    manifest = json.load(source)
+manifest["entryPoints"] = {
+    key: str(PurePosixPath(value).relative_to("omarchy-plugin"))
+    for key, value in manifest["entryPoints"].items()
+}
+with open(sys.argv[2], "w") as target:
+    json.dump(manifest, target, indent=2)
+    target.write("\n")
+PYMANIFEST
     # register the widget in shell.json (center, before the clock) — idempotent
     /usr/bin/python3 - "$HOME/.config/omarchy/shell.json" <<'PYEOF' || warn "konnte shell.json nicht anpassen - bitte Widget manuell ergaenzen"
 import json, sys, shutil, time

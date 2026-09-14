@@ -38,6 +38,10 @@ class AuthError(RuntimeError):
     """Any authentication failure (bad credentials, network, server)."""
 
 
+class InvalidSessionError(AuthError):
+    """The token endpoint explicitly rejected the authorization grant."""
+
+
 class TwoFactorRequiredError(AuthError):
     """Account enforces OTP 2FA; use the browser login flow instead."""
 
@@ -251,6 +255,12 @@ class MercedesOAuthClient:
             headers={"content-type": "application/x-www-form-urlencoded"},
         )
         if r.status_code in (400, 401, 403):
+            try:
+                error = r.json()
+            except ValueError:
+                error = None
+            if isinstance(error, dict) and error.get("error") == "invalid_grant":
+                raise InvalidSessionError("token grant invalid - relogin required")
             raise AuthError(f"token endpoint rejected request: HTTP {r.status_code}")
         if r.status_code >= 400:
             raise AuthError(f"token endpoint failed: HTTP {r.status_code}")

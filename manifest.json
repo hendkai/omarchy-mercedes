@@ -5,11 +5,18 @@
   "version": "0.1.0",
   "author": "hendkai",
   "license": "MIT",
-  "description": "Mercedes-Benz state of charge in the bar — read-only connector daemon writes a local status cache, this widget renders it. No vehicle commands, no secrets in the bar process.",
-  "tags": ["ev", "mercedes", "battery", "soc"],
-  "kinds": ["bar-widget"],
+  "description": "Mercedes-Benz state of charge in the bar \u2014 read-only connector daemon writes a local status cache, this widget renders it. No vehicle commands, no secrets in the bar process.",
+  "tags": [
+    "ev",
+    "mercedes",
+    "battery",
+    "soc"
+  ],
+  "kinds": [
+    "bar-widget"
+  ],
   "entryPoints": {
-    "barWidget": "BarWidget.qml"
+    "barWidget": "omarchy-plugin/BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Mercedes SoC",
@@ -46,8 +53,14 @@
         "label": "Display mode",
         "defaultValue": "percent",
         "enum": [
-          { "value": "percent", "label": "Percent" },
-          { "value": "bar", "label": "Charge bar" }
+          {
+            "value": "percent",
+            "label": "Percent"
+          },
+          {
+            "value": "bar",
+            "label": "Charge bar"
+          }
         ],
         "description": "Show either the numeric percentage or the charge-level bar."
       }

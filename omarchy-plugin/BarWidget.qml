@@ -228,9 +228,9 @@ BarWidget {
       spacing: 6 * root.unit
 
       Image {
-        objectName: "mercedesStar"
+        objectName: "electricVehicleIcon"
         width: 20 * root.unit; height: 20 * root.unit
-        source: Qt.resolvedUrl("assets/mercedes-star.svg")
+        source: Qt.resolvedUrl("assets/electric-vehicle.svg")
         sourceSize.width: width * 2; sourceSize.height: height * 2
         opacity: root.displayState === "offline" ? 0.45 : 1
       }

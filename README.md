@@ -1,157 +1,248 @@
-# omarchy-mercedes
+# Mercedes SoC for Omarchy
 
-Ladezustand (State of Charge) deines Mercedes EQ (und anderer Mercedes-Benz
-Fahrzeuge mit Mercedes me connect) direkt in der **Omarchy/Waybar-Taskleiste** —
-ohne Home Assistant, ohne Cloud-Dienstleister dazwischen.
+A read-only Mercedes-Benz battery, electric range and charging-status widget for
+Omarchy's **Quickshell bar**, with a separate local Python connector. No Home
+Assistant is required. A legacy Waybar module is also included.
 
-```
-🚗 82%          🔌 82%          🚗 ▮▮▮▮▮▮▮▮▯▯          🚗 Anmeldung erforderlich
-```
+- Silver vector vehicle mark, percentage or charge-bar display, optional range.
+- Left-click settings for placement and display; hover for freshness and charging
+  details; right-click for CLI status in a terminal.
+- Vehicle-data age and connection freshness are separate: a successful poll does
+  not make old vehicle data fresh. Stale, offline and sign-in states are visible.
+- Widget and settings follow the OS locale, with 20 bundled language catalogs and
+  an English fallback. [Widget controls and language coverage](omarchy-plugin/README.md).
+- No vehicle commands: no unlocking, climate control, charging control or wakeups.
 
-- **Omarchy-Shell-Plugin**: Silberner Vektor-Stern, lesbare Prozentzahl,
-  dezente Reichweite und Ladebalken mit reserviertem Platz vor der Uhr.
-  Linksklick öffnet Position/Anzeige/Reichweite; Rechtsklick den CLI-Status.
-  [Details, Zustandsanzeigen und Tests](omarchy-plugin/README.md).
-  Die Emoji-Beispiele unten beziehen sich auf das unveränderte Waybar-Modul.
-- **Waybar-Modul** (für Nicht-Omarchy-Distros): Snippets unter `waybar/`.
-- **Read-only**: Das Modul enthält keinerlei Fahrzeug-Befehle (kein Lock,
-  kein KlimaN, kein Wakeup). Nur Lesen von Ladestand, Reichweite, Lade­
-  status, Ladeleistung.
-- **Ehrlich bei alten Daten**: Verbindungsfrische und Fahrzeugdaten-Alter
-  werden getrennt ausgewiesen. Alte Fahrzeugdaten werden nie als aktuell
-  dargestellt (eigenes `stale`-Styling + Alter im Tooltip).
-- **Keine Secrets in Waybar**: Der Waybar-Prozess liest nur eine lokale
-  Status-Datei. Login, Tokens und Netzwerk liegen in einem getrennten
-  Connector-Daemon (systemd `--user`).
+> **Unofficial integration.** Not affiliated with, endorsed by, or supported by
+> Mercedes-Benz Group AG or its subsidiaries. This uses an undocumented mobile
+> API, informed by [mbapi2020](https://github.com/ReneNulschDE/mbapi2020), not an
+> official developer API. API changes, session revocation and account restrictions
+> are possible. Use only with an account and vehicle you are authorized to access,
+> subject to Mercedes-Benz's terms. A marketplace listing is not a security review;
+> Omarchy plugins run unsandboxed as your user.
 
-> **Wichtiger Hinweis**: Dieses Projekt nutzt die inoffizielle
-> Mercedes-Benz Mobile-SDK-API (dieselbe, die auch die beliebte
-> Home-Assistant-Integration `mbapi2020` verwendet). Sie ist nicht
-> offiziell dokumentiert und kann sich jederzeit ändern oder (selten)
-> Konten blockieren. Der Drei-Stern im Widget kennzeichnet das Fahrzeug;
-> dies ist keine offizielle oder von Mercedes-Benz unterstützte App. Ein offizieller "Car Connect"-Zugang mit
-> eigenen API-Credentials ist für Privatkonten derzeit nicht verfügbar
-> (Developer-Programm für BYOCAR-Pools eingestellt).
+## Prerequisites
 
-## Wie es funktioniert
+- An Omarchy release with Quickshell shell plugins and `omarchy plugin` commands.
+  The native widget does not require Waybar.
+- Python **3.9+**, pip and venv support; `requests>=2.28` and `protobuf>=4.25`
+  are installed into a dedicated virtual environment below. Optional
+  `keyring>=24` needs a working, unlocked desktop Secret Service backend.
+- A Mercedes account with a compatible connected vehicle and working connected
+  services; internet access to Mercedes authentication/telemetry endpoints.
+  Available fields vary by vehicle, account and region; compatibility is not
+  guaranteed. Default region is `eu`; `na`, `apac` and `cn` are CLI options.
+- A browser for **your own interactive login**, and systemd user services for
+  background operation. Without systemd, run the daemon in a foreground terminal.
 
-```
-Mercedes CIAM (id.mercedes-benz.com)  ──OAuth2/PKCE──▶  omarchy-mercedes login
-                                                            │ Tokens (0600/Keyring)
-                                                            ▼
-              widget/v1/vehicleattributes (protobuf) ◀── Connector-Daemon
-                                                            │ redigierter Status
-                                                            ▼
-                                        ~/.local/state/omarchy-mercedes/status.json
-                                                            │ nur Lesezugriff
-                                                            ▼
-                                              Waybar-Modul `custom/mercedes`
-```
+## Install (marketplace / native Omarchy)
 
-## Installation (Omarchy / Arch / jede Waybar-Distro)
+**Adding the plugin installs only the widget repository. It does not install
+Python dependencies, run `install.sh`, authenticate, or start the connector.**
+Without a running, authenticated connector the widget has no live vehicle data.
+Review the code before enabling it.
 
-```bash
-git clone https://github.com/hendkai/omarchy-mercedes.git
-cd omarchy-mercedes
-./install.sh
+### 1. Add the widget
+
+```sh
+omarchy plugin add https://github.com/hendkai/omarchy-mercedes.git --enable
 ```
 
-Der Installer installiert als Benutzer (kein root): Python-Paket, Wrapper in
-`~/.local/bin`, systemd-`--user`-Unit, das Omarchy-Shell-Plugin
-(`omarchy-plugin/` → `~/.config/omarchy/plugins/`, inkl. Registrierung in
-`shell.json`) sowie — falls Waybar vorhanden — Waybar-Snippets. Vorhandene
-Konfiguration wird gesichert und nur gezielt ergänzt. Rollback: `./uninstall.sh`.
+Omarchy asks for consent and placement. The repository root manifest loads
+`omarchy-plugin/BarWidget.qml`; the adjacent panel, translations and assets remain
+in that directory. Plugin ID: `hendkai.omarchy-mercedes`.
 
-Abhängigkeiten: `python3` (≥ 3.9), `requests`, `protobuf` (>= 4.25),
-optional `keyring` (Secret Service). Der Installer installiert das Paket per
-`pip --user` (auf PEP-668-Distros automatisch mit `--break-system-packages`).
+If you previously used `./install.sh`, first stop the connector and remove the
+old **copied** widget with `omarchy plugin remove hendkai.omarchy-mercedes`.
+Omarchy backs up non-git plugin folders. Then add the repository above. Do not run
+`install.sh` inside a marketplace-managed checkout: its legacy copy layout is
+different. Keep your account data; no new login is needed if the session is valid.
 
-## Ersteinrichtung (einmalig, interaktiv)
+### 2. Explicitly install the connector
 
-```bash
-omarchy-mercedes doctor    # prüft python/protobuf/requests/keyring/waybar
-omarchy-mercedes login     # Browser-Login bei Mercedes (unterstützt 2FA)
+These commands install outside the managed checkout, so plugin removal cannot
+silently delete the Python runtime. No root or `--break-system-packages` is used.
+If any target below already exists, inspect it first: **do not overwrite an
+existing executable, service unit or virtual environment without a backup and
+your consent**. For an existing installation, follow [Update](#update) instead.
+
+```sh
+PLUGIN="$HOME/.config/omarchy/plugins/hendkai.omarchy-mercedes"
+VENV="$HOME/.local/share/omarchy-mercedes-venv"
+python3 -m venv "$VENV"
+"$VENV/bin/python" -m pip install "$PLUGIN"
+mkdir -p "$HOME/.local/bin"
+# Refuses to replace an existing CLI (no -f).
+ln -s "$VENV/bin/omarchy-mercedes" "$HOME/.local/bin/omarchy-mercedes"
+mkdir -p "$HOME/.local/share/omarchy-mercedes" "$HOME/.local/state/omarchy-mercedes"
+chmod 700 "$HOME/.local/share/omarchy-mercedes" "$HOME/.local/state/omarchy-mercedes"
 ```
 
-Beim Login öffnet sich die Mercedes-Anmeldeseite im Browser. Nach der
-Anmeldung leitet Mercedes auf `rismycar://login-callback?code=…` um — Desktop-
-Browser brechen dort oft mit einer Fehlerseite ab. Das ist erwartbar und kein
-Fehler: Die komplette Adresse aus der Adressleiste (oder der `code`-Parameter
-darin) wird einfach ins Terminal eingefügt. Alternativ funktioniert der
-rein headless Passwort-Flow (`omarchy-mercedes login --password`), wenn für
-das Konto **keine** 2FA aktiviert ist; bei OTP-Pflicht verweist das Tool auf
-den Browser-Flow.
+Ensure `~/.local/bin` is on your desktop session's `PATH` for right-click status.
+To use a desktop keyring, optionally install it **before login**:
 
-```bash
-systemctl --user start --now omarchy-mercedes   # Connector-Daemon
-omarchy-mercedes status                         # Kontrolle
-# Waybar neu starten / neu laden — fertig.
+```sh
+"$HOME/.local/share/omarchy-mercedes-venv/bin/python" -m pip install 'keyring>=24'
 ```
 
-Zeitzone für die Tooltip-Zeiten: standardmäßig `Europe/Berlin`
-(`OMARCHY_MERCEDES_TZ` überschreiben oder `--timezone` am Waybar-Skript).
+### 3. Log in yourself, then start the daemon
 
-## Modul-Stati
-
-| Anzeige              | class        | Bedeutung                                              |
-|----------------------|--------------|--------------------------------------------------------|
-| 🚗 82%               | `ok`         | Daten frisch                                           |
-| 🔌 82% (grün)        | `charging`   | Ladevorgang aktiv                                      |
-| 🚗 82% (?) (amber)   | `stale`      | Verbindung ok, Fahrzeugdaten älter als 30 min          |
-| 🚗 offline (rot)     | `offline`    | Connector liefert nichts (Daemon/Netz)                 |
-| 🚗 Anmeldung … (rot) | `no-session` | Login nötig (Token widerrufen/abgelaufen)              |
-| 🚗 ! (rot)           | `error`      | API-/Netzfehler (Hinweis im Tooltip)                   |
-
-Der Tooltip zeigt Reichweite, Ladeleistung, Ladeende, **Fahrzeugdaten-
-Zeitpunkt mit Alter** und den letzten erfolgreichen Abgleich.
-
-## Konfiguration
-
-Meist ist nichts zu konfigurieren. Optionen:
-
-- `omarchy-mercedes daemon --region eu|na|apac|cn` (Standard `eu`)
-- `--vin WDD…` — bei mehreren Fahrzeugen gezielt auswählen
-  (Standard: erstes Fahrzeug des Kontos; `omarchy-mercedes vehicles` zeigt alle)
-- `--poll-interval` Sekunden (Standard 300, Minimum 60; + Exponential-Backoff
-  bei Fehlern). Wir lösen bewusst **keine Fahrzeug-Wakeups** aus und nutzen
-  nur den Widget-Attribut-Endpoint (read-only).
-- Waybar: `--stale-after` Sekunden (Standard 1800)
-
-## Token-Sicherheit
-
-- Refresh-/Access-Tokens liegen im Secret Service (keyring), wenn verfügbar;
-  Fallback: `~/.local/share/omarchy-mercedes/session.json` mit `0600`.
-- Tokens erscheinen nie im Repo, in Logs (Redaction vor jedem Log) oder im Chat.
-- Bei widerrufener Session zeigt das Modul `Anmeldung erforderlich` — dann
-  einfach erneut `omarchy-mercedes login`.
-- "Einmal einloggen, für immer" können wir nicht garantieren: Mercedes kann
-  Sessions jederzeit beenden oder Refresh-Rotation erzwingen (wird
-  transparent behandelt).
-
-## Deinstallation
-
-```bash
-./uninstall.sh        # inkl. Backup-Rollback der Waybar-Konfiguration
+```sh
+"$HOME/.local/bin/omarchy-mercedes" doctor
+"$HOME/.local/bin/omarchy-mercedes" login
 ```
 
-## Entwicklung & Tests
+Complete the Mercedes browser login yourself, including any second factor. If
+the browser cannot open the `rismycar://login-callback` redirect, follow the
+local CLI prompt to paste the callback there. That URL contains a short-lived
+credential: **never put it, passwords, codes or tokens in an issue or chat**.
 
-```bash
-python3 -m pip install --user requests "protobuf>=4.25"
-python3 -m unittest discover -s tests -v   # 33 Tests (alle synthetisch)
+For systemd, the following command refuses to overwrite an existing unit:
+
+```sh
+mkdir -p "$HOME/.config/systemd/user"
+( set -C; cat "$HOME/.config/omarchy/plugins/hendkai.omarchy-mercedes/systemd/omarchy-mercedes.service" > "$HOME/.config/systemd/user/omarchy-mercedes.service" )
+systemctl --user daemon-reload
+systemctl --user enable --now omarchy-mercedes.service
+"$HOME/.local/bin/omarchy-mercedes" status
 ```
 
-Alle Test-Fixtures sind **synthetisch** (fake VINs/Tokens, reale Protobuf-
-Schema-Instanzen). Es gibt keine echten API-Aufrufe in den Tests. Ein
-echter Smoke-Test gegen Mercedes erfordert Login-Daten und wird bewusst
-NICHT in der CI ausgeführt: `omarchy-mercedes daemon --once` nach echtem
-Login prüft den kompletten Pfad.
+The unit invokes `~/.local/bin/omarchy-mercedes`. For other regions or a selected
+vehicle, use `systemctl --user edit omarchy-mercedes.service`, setting an empty
+`ExecStart=` followed by your replacement under `[Service]`, for example
+`ExecStart=%h/.local/bin/omarchy-mercedes daemon --region na`. Restart after edits.
+`omarchy-mercedes vehicles` lists vehicles; `--vin` selects one (treat VINs as
+private). Without an override the first account vehicle is selected.
 
-## Lizenz & Drittanbieter
+Without systemd, run `~/.local/bin/omarchy-mercedes daemon --region eu` in a
+terminal instead. Default polling interval is 300 seconds, minimum 60, with
+backoff on errors. Consult `omarchy-mercedes daemon --help` for options.
 
-MIT — siehe [LICENSE](LICENSE) und [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-(vendored Protobuf-Module aus `mbapi2020`, MIT).
+## Update
 
-**Disclaimer**: Kein offizielles Mercedes-Benz-Produkt. Verwendung der
-inoffiziellen API auf eigenes Risiko; der Autor steht in keiner Beziehung
-zu Mercedes-Benz Group AG.
+The widget checkout and installed Python package are **separate**:
+
+```sh
+omarchy plugin update hendkai.omarchy-mercedes
+# Review the changed code/release notes before updating the connector.
+systemctl --user stop omarchy-mercedes.service
+"$HOME/.local/share/omarchy-mercedes-venv/bin/python" -m pip install --upgrade "$HOME/.config/omarchy/plugins/hendkai.omarchy-mercedes"
+systemctl --user start omarchy-mercedes.service
+"$HOME/.local/bin/omarchy-mercedes" status
+```
+
+An Omarchy plugin update does not run pip or migrate your service unit. If the
+shipped service changes, review the diff and back up your installed unit before
+explicitly replacing it and running `systemctl --user daemon-reload`. Existing
+sessions are retained; log in again only when required. For a manually run daemon,
+stop/restart that process instead of using systemctl. Keep the managed checkout
+unmodified so Omarchy can update it safely.
+
+## Remove
+
+For the recommended installation above:
+
+```sh
+systemctl --user disable --now omarchy-mercedes.service
+rm -- "$HOME/.config/systemd/user/omarchy-mercedes.service"
+systemctl --user daemon-reload
+omarchy plugin remove hendkai.omarchy-mercedes
+# Remove only the CLI symlink and venv you created in the install steps.
+rm -- "$HOME/.local/bin/omarchy-mercedes"
+rm -r -- "$HOME/.local/share/omarchy-mercedes-venv"
+```
+
+If you added systemd overrides, review and remove the corresponding
+`~/.config/systemd/user/omarchy-mercedes.service.d/` files too. If you did not
+install the service, stop the foreground daemon and skip the systemctl/unit
+steps. Omarchy handles widget disable/removal; other bar settings are not reset.
+**Removing the widget alone does not stop or uninstall the daemon.**
+
+Account data is retained by default. To erase it, first stop the daemon, then
+explicitly delete `~/.local/share/omarchy-mercedes/` (file-backed session) and
+`~/.local/state/omarchy-mercedes/` (status and installer backups). If a Secret
+Service keyring was used, also remove the `omarchy-mercedes` / `session` credential
+with your desktop password/keyring manager. Deleting files does not erase keyring
+entries or revoke server-side sessions; use Mercedes account session controls
+where available. Do not publish backups or status files.
+
+## Privacy and security
+
+```text
+Your browser + Mercedes login -> local connector -> Mercedes telemetry API
+                                      |
+                                      v
+                 ~/.local/state/omarchy-mercedes/status.json
+                                      |
+                                      v
+                              Quickshell widget
+```
+
+The widget reads a local status cache; authentication and network requests live
+in the separate connector. The project does not provide an intermediary cloud
+service or analytics endpoint. Mercedes receives authentication and telemetry
+requests. Local status includes vehicle information and timestamps; even without
+tokens, it is private. CLI vehicle listings and diagnostics can reveal identifying
+data: inspect and redact before sharing.
+
+Sessions use the desktop keyring when available, otherwise
+`~/.local/share/omarchy-mercedes/session.json` with restricted file permissions
+(`0600`). This fallback is a plaintext credential file, **not encryption**.
+Protect your home directory and backups. Redaction is defense in depth, not a
+reason to share raw logs. Mercedes can expire or revoke sessions at any time;
+there is no guarantee of a permanent login.
+
+## Legacy installer and Waybar
+
+`./install.sh` is an alternative user-space installer, **not an Omarchy marketplace
+hook**. Review it before running: it uses pip `--user` (retrying with
+`--break-system-packages`), replaces CLI wrappers and the service unit, copies the
+standalone `omarchy-plugin/` bundle, registers it in `shell.json`, and may modify
+Waybar snippets/styles. It enables but does not immediately start the daemon.
+It makes backups, but is not a general configuration transaction/rollback tool.
+Prefer the isolated virtual-environment instructions above on modern Arch.
+
+Do not mix the legacy installer and marketplace layout. For a legacy installation,
+remove the widget with `omarchy plugin remove hendkai.omarchy-mercedes`, then run
+`./uninstall.sh` from your source checkout. That script handles the old pip/user
+wrappers/service and Waybar files, **not the native plugin**; its Waybar rollback
+can restore older configuration, so back up current changes first. Its session
+prompt only deletes file-backed data, not keyring credentials.
+
+Waybar users can use the snippets under `waybar/` and the packaged
+`omarchy-mercedes-waybar` entry point. Add `custom/mercedes` to the desired module
+list and include its styles manually. The Waybar formatter defaults to
+`Europe/Berlin`; `OMARCHY_MERCEDES_TZ` is honored by the legacy wrapper, or pass
+`--timezone` directly to the formatter. The native widget uses the OS locale.
+
+## Development and verification
+
+```sh
+# In a development venv, not your account/session environment:
+python -m pip install -e .
+PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring python -m unittest discover -s tests -v
+bash -n install.sh uninstall.sh tests/check_marketplace_setup.sh
+bash tests/check_marketplace_setup.sh  # temporary HOME; downloads/builds dependencies
+omarchy plugin validate .
+```
+
+Tests use synthetic fixtures and offline mocks; no real login or Mercedes API
+smoke test runs in CI. Keep the null keyring override when testing locally.
+Packaging checks enforce exactly one root manifest and real relative entry
+points; legacy installer tests verify its generated flattened manifest. The installed Omarchy validator and Qt/Omarchy-dependent tests skip
+explicitly when their runtime is unavailable; a generic Linux CI pass is not
+proof of a live desktop rendering test. [Widget test details](omarchy-plugin/README.md).
+
+## License, assets and affiliation
+
+Project code is MIT licensed: [LICENSE](LICENSE). Vendored protobuf modules have
+separate upstream notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which
+also documents dependencies and the bundled neutral vehicle icon.
+
+The silver [electric-vehicle.svg](omarchy-plugin/assets/electric-vehicle.svg) is
+original neutral car-and-battery artwork created for this project and released
+under the same MIT license. It contains no manufacturer logo or emblem and uses
+no downloaded brand assets. Mercedes-Benz names and trademarks remain the
+property of their respective owners; the MIT license grants **no trademark
+rights**. This unofficial integration has no claimed affiliation or endorsement.
+No private desktop screenshot is included as a marketplace preview.

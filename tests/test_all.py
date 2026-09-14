@@ -119,7 +119,7 @@ class TestExtractStatus(unittest.TestCase):
         st = extract_status(telemetry.decode_vehicle_attributes(m.SerializeToString()), NOW_S * 1000)
         self.assertEqual(st["state"], state.STATE_ERROR)
 
-    def test_vehicle_ts_is_newest_attribute_ts(self):
+    def test_vehicle_ts_is_soc_attribute_ts(self):
         blob = build_vep_update(soc_ts_ms=1000)
         data = telemetry.decode_vehicle_attributes(blob)
         st = extract_status(data, NOW_S * 1000)
@@ -337,11 +337,12 @@ class TestSessionStore(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             with mock.patch("omarchy_mercedes.daemon.DATA_DIR", Path(d)), \
-                 mock.patch("omarchy_mercedes.daemon.SESSION_FILE", Path(d) / "session.json"):
+                 mock.patch("omarchy_mercedes.daemon.SESSION_FILE", Path(d) / "session.json"), \
+                 mock.patch.dict(sys.modules, {"keyring": None}):
                 tok = {"access_token": "SECRET-AT", "refresh_token": "SECRET-RT", "expires_at": 1}
                 save_session(tok)
                 f = Path(d) / "session.json"
-                # keyring unavailable in tests -> file fallback must exist, 0600
+                # Explicitly disable keyring, independent of host configuration.
                 self.assertTrue(f.exists())
                 self.assertEqual(f.stat().st_mode & 0o777, 0o600)
                 loaded = load_session("eu")

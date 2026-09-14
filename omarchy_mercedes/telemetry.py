@@ -40,6 +40,10 @@ class ApiError(RuntimeError):
     """Telemetry API failure (network, HTTP, protobuf decode)."""
 
 
+class UnauthorizedError(ApiError):
+    """The API rejected the access token; refresh before retrying once."""
+
+
 class VehicleApi:
     """Read-only vehicle data access."""
 
@@ -82,7 +86,7 @@ class VehicleApi:
         except Exception as e:
             raise ApiError(f"network error: {type(e).__name__}") from e
         if r.status_code == 401:
-            raise ApiError("unauthorized (401) - token expired or revoked")
+            raise UnauthorizedError("unauthorized (401) - token expired or revoked")
         if r.status_code == 403:
             raise ApiError("forbidden (403) - account not entitled for this vehicle")
         if r.status_code == 404:
@@ -121,7 +125,7 @@ class VehicleApi:
         except Exception as e:
             raise ApiError(f"network error: {type(e).__name__}") from e
         if r.status_code == 401:
-            raise ApiError("unauthorized (401)")
+            raise UnauthorizedError("unauthorized (401)")
         if r.status_code >= 400:
             raise ApiError(f"HTTP {r.status_code}")
         return decode_vehicle_attributes(r.content)
@@ -191,7 +195,7 @@ def decode_vehicle_attributes(blob: bytes) -> dict:
         elif hasattr(attr, "value"):
             # newer typed attributes (e.g. Int64DistanceAttribute) keep the
             # value at field 1 and metadata (ts/status) in field 2
-            ent = entry(attr.metadata) if hasattr(attr, "metadata") else {}
+            ent = entry(attr)
             ent["value"] = attr.value
             if getattr(attr, "display_value", None):
                 ent["display_value"] = attr.display_value

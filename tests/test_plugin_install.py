@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 
@@ -27,7 +28,13 @@ class PluginInstallTest(unittest.TestCase):
                 self.install(home)
                 self.assertEqual(json.loads(config.read_text()), data)
                 plugin=config.parent/'plugins'/ID
-                for name in ['SettingsPanel.qml','assets/mercedes-star.svg','BarWidget.qml']:
+                manifest = json.loads((plugin/'manifest.json').read_text())
+                root = json.loads((REPO/'manifest.json').read_text())
+                self.assertEqual(manifest, dict(root, entryPoints={'barWidget':'BarWidget.qml'}))
+                if shutil.which('omarchy-plugin-validate'):
+                    result = subprocess.run(['omarchy-plugin-validate', str(plugin)], capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for name in ['SettingsPanel.qml','assets/electric-vehicle.svg','BarWidget.qml']:
                     self.assertEqual((plugin/name).read_bytes(), (REPO/'omarchy-plugin'/name).read_bytes())
 
     def test_first_registration_and_duplicate_cleanup(self):
