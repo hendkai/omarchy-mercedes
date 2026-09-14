@@ -47,8 +47,30 @@ Mercedes CIAM (id.mercedes-benz.com)  ──OAuth2/PKCE──▶  omarchy-merced
 ```bash
 git clone https://github.com/hendkai/omarchy-mercedes.git
 cd omarchy-mercedes
-./install.sh
+./install.sh                # fragt interaktiv die Sprache ab (Enter = Deutsch)
 ```
+
+### Sprache / Language
+
+Der Installer startet mit einer interaktiven Sprachauswahl
+(`1) Deutsch  2) English`, `Enter` = Deutsch; ungültige Eingaben werden
+wiederholt abgefragt, `Strg+D` bricht sauber ab, bevor etwas installiert
+wird). Alle Meldungen, Warnungen, Fehler und Hinweise (inkl. Waybar- und
+Login-Hinweise am Ende) erscheinen in der gewählten Sprache — technische
+Befehle und Pfade bleiben unübersetzt.
+
+Nichtinteraktiv (Skript/CI):
+
+```bash
+./install.sh --lang de      # Deutsch
+./install.sh --lang en      # English
+./install.sh --help         # zeigt Optionen (beide Sprachen)
+```
+
+Ohne Terminal (z. B. `curl | bash`, CI ohne `--lang`) blockiert der
+Installer nie: Er läuft auf Englisch durch und weist im Terminal auf
+`--lang de` hin (Standard Englisch, damit internationale Nutzer keine
+deutschen Meldungen bekommen).
 
 Der Installer installiert als Benutzer (kein root): Python-Paket, Wrapper in
 `~/.local/bin`, systemd-`--user`-Unit, Waybar-Snippets. Vorhandene Waybar-

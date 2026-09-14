@@ -28,6 +28,29 @@ jobs:
       - name: Installer syntax check
         run: bash -n install.sh uninstall.sh
 
+      - name: Installer language smoke
+        if: matrix.python == '3.12'
+        run: |
+          set -euxo pipefail
+          export HOME="$PWD/fakehome-lang"
+          mkdir -p "$HOME"
+          # non-interactive German and English runs complete and speak the right language
+          bash install.sh --lang de > de.out 2> de.err
+          grep -q "Naechste Schritte" de.out
+          bash install.sh --lang en > en.out 2> en.err
+          grep -q "Next steps" en.out
+          # --help is bilingual and explains --lang
+          bash install.sh --help > help.out
+          grep -q "Usage" help.out
+          grep -q "Verwendung" help.out
+          # invalid language fails with exit 1 before installing anything
+          if bash install.sh --lang fr > fr.out 2>&1; then echo "fr must fail"; exit 1; fi
+          grep -q "Unknown language: fr" fr.out
+          # no TTY, no --lang: never blocks, English default + --lang hint
+          bash install.sh </dev/null > nonetty.out 2>&1
+          grep -q "no terminal detected" nonetty.out
+          grep -q "Next steps" nonetty.out
+
   install-isolated:
     runs-on: ubuntu-latest
     steps:
@@ -42,7 +65,7 @@ jobs:
           mkdir -p "$HOME"
           export PATH="$HOME/.local/bin:$PATH"
           python -m pip install --user requests "protobuf>=4.25" >/dev/null
-          bash install.sh <<< "" || true
+          bash install.sh --lang en
           test -x "$HOME/.local/bin/omarchy-mercedes"
           "$HOME/.local/bin/omarchy-mercedes" --version
           "$HOME/.local/bin/omarchy-mercedes-waybar" | grep -q '"class"'
