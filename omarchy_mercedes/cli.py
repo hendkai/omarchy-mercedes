@@ -26,7 +26,8 @@ def main(argv=None) -> int:
     p_status = sub.add_parser("status", help="zeige aktuellen Statuscache (redigiert)")
     p_status.add_argument("--json", action="store_true")
 
-    sub.add_parser("vehicles", help="Fahrzeuge im Konto anzeigen (benötigt Login)")
+    p_veh = sub.add_parser("vehicles", help="Fahrzeuge im Konto anzeigen (benötigt Login)")
+    p_veh.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
 
     p_daemon = sub.add_parser("daemon", help="Connector-Daemon starten (systemd --user nutzt dies)")
     p_daemon.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
@@ -86,11 +87,11 @@ def main(argv=None) -> int:
         from .daemon import load_session
         from .telemetry import VehicleApi
 
-        session = load_session("eu")
+        session = load_session(args.region)
         if session is None:
             print("Nicht eingeloggt - erst 'omarchy-mercedes login'.", file=sys.stderr)
             return 2
-        api = VehicleApi(region="eu")
+        api = VehicleApi(region=args.region)
         try:
             for i, v in enumerate(api.list_vehicles(session["access_token"]), 1):
                 print(f"{i}. VIN {v.get('vin')} ({v.get('deviceCategory', '?')})")

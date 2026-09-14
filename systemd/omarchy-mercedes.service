@@ -4,22 +4,21 @@ Documentation=https://github.com/hendkai/omarchy-mercedes
 # Runs as the logged-in user; no root required.
 # Starts with the graphical session so the car status is ready with the bar.
 
+# Never let the daemon spin on crashes
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/omarchy-mercedes daemon --region eu
 Restart=on-failure
 RestartSec=30
-# Never let the daemon spin on crashes
-StartLimitIntervalSec=300
-StartLimitBurst=5
 # Security hardening (no secrets in /tmp, no root)
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=%h/.local/state/omarchy-mercedes %h/.local/share/omarchy-mercedes
 ProtectHome=read-only
-# keyring/Secret Service access via session bus
-SupplementaryGroups=users
 
 [Install]
 WantedBy=default.target

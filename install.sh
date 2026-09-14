@@ -43,16 +43,18 @@ if ! python3 -m pip install --user "$REPO_DIR" 2>/dev/null; then
     python3 -m pip install --user --break-system-packages "$REPO_DIR"
 fi
 
-# 2. Wrappers
+# 2. Wrappers (pin the interpreter the package was installed for, so an
+#    activated venv in the user's shell cannot shadow the system install)
 log "installing wrappers to $BIN_DIR ..."
-cat > "$BIN_DIR/omarchy-mercedes" <<'EOF'
+PY_BIN="$(command -v python3)"
+cat > "$BIN_DIR/omarchy-mercedes" <<EOF
 #!/usr/bin/env bash
-exec python3 -m omarchy_mercedes.cli "$@"
+exec $PY_BIN -m omarchy_mercedes.cli "\$@"
 EOF
-cat > "$BIN_DIR/omarchy-mercedes-waybar" <<'EOF'
+cat > "$BIN_DIR/omarchy-mercedes-waybar" <<EOF
 #!/usr/bin/env bash
 # Waybar custom module entrypoint: reads the local status cache only.
-exec python3 -m omarchy_mercedes.waybar_module --timezone "${OMARCHY_MERCEDES_TZ:-Europe/Berlin}" "$@"
+exec $PY_BIN -m omarchy_mercedes.waybar_module --timezone "\${OMARCHY_MERCEDES_TZ:-Europe/Berlin}" "\$@"
 EOF
 chmod +x "$BIN_DIR/omarchy-mercedes" "$BIN_DIR/omarchy-mercedes-waybar"
 

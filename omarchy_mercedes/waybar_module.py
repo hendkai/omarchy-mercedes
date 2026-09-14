@@ -117,7 +117,7 @@ def render(status: dict | None, stale_after_s: int = 1800, tz: str | None = None
     }
 
 
-def main() -> int:
+def main(argv=None) -> int:
     import argparse
 
     ap = argparse.ArgumentParser(prog="omarchy-mercedes-waybar")
@@ -126,7 +126,7 @@ def main() -> int:
                     help="vehicle data older than this many seconds shows as stale (default 1800)")
     ap.add_argument("--timezone", default=None, help="IANA tz for tooltip times, e.g. Europe/Berlin")
     ap.add_argument("--compact", action="store_true", help="icon + percent only")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     from pathlib import Path
 
