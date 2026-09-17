@@ -17,8 +17,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Install deps
-        run: python -m pip install requests "protobuf>=4.25"
+      - name: Install locked deps (hash-verified)
+        run: |
+          python -m pip install --require-hashes -r requirements.lock
+          python -m pip install --no-deps --require-hashes -r build.lock
+          python -m pip install --no-build-isolation --no-deps .
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: CLI smoke
@@ -27,6 +30,18 @@ jobs:
           python -m omarchy_mercedes.waybar_module < /dev/null | python -c "import json,sys; d=json.loads(sys.stdin.read()); assert 'text' in d and 'class' in d; print('waybar json ok:', d['class'])"
       - name: Installer syntax check
         run: bash -n install.sh uninstall.sh
+      - name: Lock drift check
+        run: |
+          python - <<'EOF'
+          import re, sys
+          from pathlib import Path
+          lock = Path('requirements.lock').read_text()
+          pinned = set(re.findall(r'^([A-Za-z0-9_.-]+)==([0-9][^\s;]*)', lock, re.M))
+          floating = [n for n, v in pinned if not re.match(r'^[0-9]+(\.[0-9]+)*$', v)]
+          if floating:
+              sys.exit('Non-exact pins in lock: %s' % floating)
+          print('lock pins exact:', len(pinned), 'packages')
+          EOF
 
   install-isolated:
     runs-on: ubuntu-latest
@@ -35,7 +50,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Isolated user install / uninstall roundtrip
-        run: |
-          python -m pip install requests "protobuf>=4.25" keyring
-          bash tools/verify_linux.sh
+      - name: Isolated user install / uninstall roundtrip (locked, hash-verified)
+        run: bash tools/verify_linux.sh

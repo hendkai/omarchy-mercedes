@@ -164,7 +164,24 @@ class Installer:
         self.record['venv_owned'] = True
         self.persist()
         subprocess.run([sys.executable, '-m', 'venv', str(self.venv)], check=True)
-        subprocess.run([str(self.venv/'bin/python'), '-m', 'pip', 'install', str(REPO) + '[keyring]'], check=True)
+        # Reproducible install: every dependency transitively pinned with
+        # sha256 hashes (requirements.lock), build backend pinned via
+        # build.lock (pip --require-build-dependencies honors hashes when
+        # building from the locked source tree).
+        venv_python = str(self.venv/'bin/python')
+        lock = REPO/'requirements.lock'
+        build_lock = REPO/'build.lock'
+        subprocess.run([venv_python, '-m', 'pip', 'install', '--no-cache-dir',
+                        '--require-virtualenv', '--disable-pip-version-check',
+                        '--require-hashes', '-r', str(lock)], check=True)
+        subprocess.run([venv_python, '-m', 'pip', 'install', '--no-cache-dir',
+                        '--require-virtualenv', '--disable-pip-version-check',
+                        '--no-deps', '--require-hashes', '-r', str(build_lock)], check=True)
+        # Build+install the plugin itself from the reviewed tree; no network
+        # (build deps already installed above, runtime deps already locked).
+        subprocess.run([venv_python, '-m', 'pip', 'install', '--no-cache-dir',
+                        '--require-virtualenv', '--disable-pip-version-check',
+                        '--no-build-isolation', '--no-deps', str(REPO)], check=True)
         for path, (content, mode) in changes.items():
             self.put(path, content, mode)
         self.systemctl('daemon-reload')

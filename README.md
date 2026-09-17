@@ -167,12 +167,21 @@ dem Manifest wiederhergestellt; Nutzeränderungen erzwingen manuelle Klärung.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install '.[keyring]'
+.venv/bin/pip install --require-hashes -r requirements.lock
+.venv/bin/pip install --no-deps --require-hashes -r build.lock
+.venv/bin/pip install --no-build-isolation --no-deps .
 .venv/bin/python -m unittest discover -s tests -v
 bash -n install.sh uninstall.sh
 # Linux, wegwerfbarer Testbenutzer empfohlen:
 bash tools/verify_linux.sh
 ```
+
+Alle Laufzeit- und Build-Abhängigkeiten sind transitiv in `requirements.lock`
+und `build.lock` mit SHA-256-Hashes fixiert; der Installer
+(`tools/installer.py`) installiert ausschließlich mit `--require-hashes`,
+`--no-build-isolation` und `--no-deps` aus dem geprüften Quellbaum —
+reproduzierbar, ohne floating ranges. Updates der Pins erfolgen per neuem
+Lockfile-Commit (uv pip compile), nicht zur Installationszeit.
 
 Alle Unit-/Session-/Auth-Fixtures sind synthetisch und verwenden keinen echten
 Keyring. Der Linux-Runner installiert das echte Wheel in eine isolierte venv,
