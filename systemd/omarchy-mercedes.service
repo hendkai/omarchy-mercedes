@@ -1,6 +1,7 @@
 [Unit]
 Description=omarchy-mercedes connector (experimental, read-only)
 Documentation=https://github.com/hendkai/omarchy-mercedes
+# Never let the daemon spin on crashes
 StartLimitIntervalSec=300
 StartLimitBurst=5
 

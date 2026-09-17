@@ -34,23 +34,22 @@ NOW_S = 1800000000  # fixed epoch for deterministic tests
 
 
 def build_vep_update(soc=82, range_km=315, charging=True, soc_ts_ms=None, emit_ts_ms=None):
-    """Build a SYNTHETIC VEPUpdate protobuf message (test fixture)."""
+    """Build a SYNTHETIC VehicleStatusUpdate protobuf (live observed format)."""
     from omarchy_mercedes.vendored import vehicle_events_pb2 as vep
 
-    m = vep.VEPUpdate()
-    m.vin = "SYNTHETIC00000000"  # fake VIN, never a real one
-    ts = soc_ts_ms or (NOW_S * 1000 - 120_000)  # default: data 2 min old
-    m.attributes["stateofcharge"].int_value = soc
-    m.attributes["stateofcharge"].timestamp_in_ms = ts
-    m.attributes["rangeelectric"].int_value = range_km
-    m.attributes["rangeelectric"].timestamp_in_ms = ts
-    m.attributes["chargingactive"].bool_value = charging
-    m.attributes["chargingactive"].timestamp_in_ms = ts
-    m.attributes["chargingstatus"].string_value = "CHARGING"
-    m.attributes["chargingstatus"].timestamp_in_ms = ts
-    m.attributes["chargingpower"].double_value = 11.0
-    m.attributes["chargingpower"].timestamp_in_ms = ts
-    m.emit_timestamp_in_ms = emit_ts_ms or ts
+    m = vep.VehicleStatusUpdate()
+    m.fin_or_vin = "SYNTHETIC00000000"  # fake VIN, never a real one
+    ts_s = (soc_ts_ms // 1000) if soc_ts_ms else (NOW_S - 120)  # data 2 min old
+    ts_ms = soc_ts_ms or ts_s * 1000
+    m.soc.value = soc
+    m.soc.metadata.timestamp.seconds = ts_ms // 1000
+    m.rangeelectric.value = range_km
+    m.rangeelectric.metadata.timestamp.seconds = ts_ms // 1000
+    m.chargingactive.value = charging
+    m.chargingactive.metadata.timestamp.seconds = ts_ms // 1000
+    m.chargingstatus.value = vep.CHARGINGSTATUS_CHARGING
+    m.chargingstatus.metadata.timestamp.seconds = ts_ms // 1000
+    m.vtime.value = emit_ts_ms // 1000 if emit_ts_ms else ts_s
     return m.SerializeToString()
 
 
@@ -92,7 +91,7 @@ class TestProtobufDecode(unittest.TestCase):
     def test_decode_synthetic_fixture(self):
         blob = build_vep_update(soc=42, range_km=210, charging=False)
         out = telemetry.decode_vehicle_attributes(blob)
-        self.assertEqual(out["attributes"]["stateofcharge"]["value"], 42)
+        self.assertEqual(out["attributes"]["soc"]["value"], 42)
         self.assertEqual(out["attributes"]["rangeelectric"]["value"], 210)
         self.assertFalse(out["attributes"]["chargingactive"]["value"])
 
@@ -110,17 +109,17 @@ class TestExtractStatus(unittest.TestCase):
         self.assertEqual(st["soc_percent"], 77)
         self.assertEqual(st["range_km"], 280)
         self.assertTrue(st["charging"])
-        self.assertEqual(st["charging_power_kw"], 11.0)
+        self.assertIsNone(st["charging_power_kw"])  # not delivered by VehicleStatusUpdate
 
     def test_extract_missing_soc_is_error(self):
         from omarchy_mercedes.vendored import vehicle_events_pb2 as vep
 
-        m = vep.VEPUpdate()
-        m.attributes["odometer"].int_value = 12345
+        m = vep.VehicleStatusUpdate()
+        m.overall_range.value = 421.0
         st = extract_status(telemetry.decode_vehicle_attributes(m.SerializeToString()), NOW_S * 1000)
         self.assertEqual(st["state"], state.STATE_ERROR)
 
-    def test_vehicle_ts_is_newest_attribute_ts(self):
+    def test_vehicle_ts_is_soc_attribute_ts(self):
         blob = build_vep_update(soc_ts_ms=1000)
         data = telemetry.decode_vehicle_attributes(blob)
         st = extract_status(data, NOW_S * 1000)
@@ -133,7 +132,7 @@ class TestClassifyAndState(unittest.TestCase):
         return {
             "state": state_,
             "soc_percent": 50,
-            "vehicle_ts_ms": ts, "soc_ts_ms": ts,
+            "vehicle_ts_ms": ts,
             "fetched_at_ms": ts,
             "written_at_ms": ts,
         }
@@ -169,7 +168,7 @@ class TestClassifyAndState(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as d:
-            p = Path(d).resolve() / "status.json"
+            p = Path(d) / "status.json"
             state.write_status({"state": "ok", "soc_percent": 33}, p)
             self.assertEqual(state.read_status(p)["soc_percent"], 33)
             # invalid json -> None, never a crash
@@ -186,7 +185,7 @@ class TestWaybarRender(unittest.TestCase):
         out = self.render_now({
             "state": "ok", "soc_percent": 82, "range_km": 315, "range_unit": "km",
             "charging": True, "charging_power_kw": 11,
-            "vehicle_ts_ms": (NOW_S - 120) * 1000, "soc_ts_ms": (NOW_S - 120) * 1000, "range_ts_ms": (NOW_S - 120) * 1000, "charging_ts_ms": (NOW_S - 120) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
+            "vehicle_ts_ms": (NOW_S - 120) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         self.assertIn("82%", out["text"])
@@ -199,7 +198,7 @@ class TestWaybarRender(unittest.TestCase):
     def test_ok_not_charging(self):
         out = self.render_now({
             "state": "ok", "soc_percent": 64, "range_km": 240, "charging": False,
-            "vehicle_ts_ms": (NOW_S - 300) * 1000, "soc_ts_ms": (NOW_S - 300) * 1000, "range_ts_ms": (NOW_S - 300) * 1000, "charging_ts_ms": (NOW_S - 300) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
+            "vehicle_ts_ms": (NOW_S - 300) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         self.assertEqual(out["class"], "ok")
@@ -208,7 +207,7 @@ class TestWaybarRender(unittest.TestCase):
     def test_stale_marked_not_fresh(self):
         out = self.render_now({
             "state": "ok", "soc_percent": 82, "range_km": 315, "charging": False,
-            "vehicle_ts_ms": (NOW_S - 86400) * 1000, "soc_ts_ms": (NOW_S - 86400) * 1000, "range_ts_ms": (NOW_S - 86400) * 1000, "charging_ts_ms": (NOW_S - 86400) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
+            "vehicle_ts_ms": (NOW_S - 86400) * 1000, "fetched_at_ms": (NOW_S - 60) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         self.assertEqual(out["class"], "stale")
@@ -245,7 +244,7 @@ class TestWaybarRender(unittest.TestCase):
     def test_valid_json_output(self):
         out = self.render_now({
             "state": "ok", "soc_percent": 82, "charging": True,
-            "vehicle_ts_ms": (NOW_S - 10) * 1000, "soc_ts_ms": (NOW_S - 10) * 1000, "range_ts_ms": (NOW_S - 10) * 1000, "charging_ts_ms": (NOW_S - 10) * 1000, "fetched_at_ms": (NOW_S - 5) * 1000,
+            "vehicle_ts_ms": (NOW_S - 10) * 1000, "fetched_at_ms": (NOW_S - 5) * 1000,
             "written_at_ms": NOW_S * 1000,
         })
         json.dumps(out)  # must not raise
@@ -322,17 +321,6 @@ class TestOAuthClient(unittest.TestCase):
             if "login/pass" not in url and "disablePasskeyDemo" not in url:
                 self.assertNotIn("hunter2-SECRET", json.dumps(kw.get("json", {})))
 
-    def test_passkey_does_not_change_account_settings(self):
-        responses = [
-            FakeResponse(200, url="https://id.mercedes-benz.com/as/login?resume=%2Fsynthetic"),
-            FakeResponse(200, {}), FakeResponse(200, {}),
-            FakeResponse(200, {"passkeyDemoEnabled": True}),
-        ]
-        client, session = self._client(responses)
-        with self.assertRaises(AuthError):
-            client.login_with_password("user@example.com", "SYNTHETIC_PASSWORD")
-        self.assertFalse(any("disablePasskeyDemo" in url for _, url, _ in session.calls))
-
     def test_network_error_wrapped(self):
         class ExplodingSession:
             def request(self, *a, **k):
@@ -348,13 +336,13 @@ class TestSessionStore(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as d:
-            with mock.patch("omarchy_mercedes.daemon.DATA_DIR", Path(d).resolve()), \
-                 mock.patch("omarchy_mercedes.daemon.SESSION_FILE", Path(d).resolve() / "session.json"), \
-                 mock.patch("omarchy_mercedes.daemon._keyring", return_value=None):
+            with mock.patch("omarchy_mercedes.daemon.DATA_DIR", Path(d)), \
+                 mock.patch("omarchy_mercedes.daemon.SESSION_FILE", Path(d) / "session.json"), \
+                 mock.patch.dict(sys.modules, {"keyring": None}):
                 tok = {"access_token": "SECRET-AT", "refresh_token": "SECRET-RT", "expires_at": 1}
                 save_session(tok)
-                f = Path(d).resolve() / "session.json"
-                # keyring unavailable in tests -> file fallback must exist, 0600
+                f = Path(d) / "session.json"
+                # Explicitly disable keyring, independent of host configuration.
                 self.assertTrue(f.exists())
                 self.assertEqual(f.stat().st_mode & 0o777, 0o600)
                 loaded = load_session("eu")

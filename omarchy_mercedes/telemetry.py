@@ -40,6 +40,10 @@ class ApiError(RuntimeError):
     """Telemetry API failure (network, HTTP, protobuf decode)."""
 
 
+class UnauthorizedError(ApiError):
+    """The API rejected the access token; refresh before retrying once."""
+
+
 class VehicleApi:
     """Read-only vehicle data access."""
 
@@ -82,7 +86,7 @@ class VehicleApi:
         except Exception as e:
             raise ApiError(f"network error: {type(e).__name__}") from e
         if r.status_code == 401:
-            raise ApiError("unauthorized (401) - token expired or revoked")
+            raise UnauthorizedError("unauthorized (401) - token expired or revoked")
         if r.status_code == 403:
             raise ApiError("forbidden (403) - account not entitled for this vehicle")
         if r.status_code == 404:
@@ -96,9 +100,12 @@ class VehicleApi:
 
     def list_vehicles(self, token: str) -> list[dict]:
         data = self._get_json(f"{self.rest}/v2/vehicles", token)
-        # v2/vehicles returns [{"vin": ..., "deviceCategory": ...}, ...]
-        if isinstance(data, dict) and "vehicles" in data:
-            data = data["vehicles"]
+        # possible envelopes: [{"vin": ...}], {"vehicles": [...]},
+        # {"assignedVehicles": [...]} (observed on EU accounts, 2026-09)
+        for key in ("vehicles", "assignedVehicles"):
+            if isinstance(data, dict) and isinstance(data.get(key), list):
+                data = data[key]
+                break
         if not isinstance(data, list):
             raise ApiError("unexpected /v2/vehicles response shape")
         return data
@@ -118,46 +125,81 @@ class VehicleApi:
         except Exception as e:
             raise ApiError(f"network error: {type(e).__name__}") from e
         if r.status_code == 401:
-            raise ApiError("unauthorized (401)")
+            raise UnauthorizedError("unauthorized (401)")
         if r.status_code >= 400:
             raise ApiError(f"HTTP {r.status_code}")
         return decode_vehicle_attributes(r.content)
 
 
 def decode_vehicle_attributes(blob: bytes) -> dict:
-    """Parse a VEPUpdate protobuf into a flat dict (no secrets, no VIN leak)."""
+    """Parse the vehicleattributes protobuf into a flat dict.
+
+    The widget endpoint returns a VehicleStatusUpdate (each attribute is its
+    own numbered field, observed live 2026-09), not a VEPUpdate map message.
+    We walk the typed fields and emit the same {attributes: {key: {...}}}
+    shape the daemon consumes; keys match the mbapi2020 attribute names.
+    """
     try:
         from .vendored import vehicle_events_pb2 as vep
     except ImportError as e:
         raise ApiError(f"protobuf support unavailable: {e}") from e
-    msg = vep.VEPUpdate()
+
+    msg = vep.VehicleStatusUpdate()
     try:
         msg.ParseFromString(blob)
     except Exception as e:
         raise ApiError(f"protobuf decode failed: {type(e).__name__}") from e
 
     def value_of(attr):
-        # value scalars live in the "attribute_type" oneof; presence via HasField
+        # typed value in VehicleAttributeStatus oneof
         for field in ("int_value", "bool_value", "string_value", "double_value"):
             try:
                 if attr.HasField(field):
                     return getattr(attr, field)
-            except ValueError:
+            except (ValueError, AttributeError):
                 continue
-        return attr.display_value or None
+        return getattr(attr, "display_value", None) or None
+
+    def entry(attr):
+        # typed attributes carry metadata (timestamp in SECONDS, status);
+        # classic VehicleAttributeStatus has ms fields directly
+        md = getattr(attr, "metadata", None)
+        ts_ms = getattr(attr, "timestamp_in_ms", 0) or None
+        if md is not None and ts_ms is None:
+            ts = getattr(md, "timestamp", None)
+            if ts is not None and ts.seconds:
+                ts_ms = ts.seconds * 1000 + ts.nanos // 1_000_000
+        return {
+            "value": value_of(attr),
+            "ts_ms": ts_ms,
+            "display_value": getattr(attr, "display_value", None) or None,
+            "status": int(getattr(attr, "status", 0) or (md.status if md is not None else 0)),
+        }
 
     out = {
-        "emit_timestamp_ms": msg.emit_timestamp_in_ms or None,
-        "full_update": msg.full_update,
+        "emit_timestamp_ms": None,
+        "full_update": True,
         "attributes": {},
     }
-    for name, attr in msg.attributes.items():
-        out["attributes"][name] = {
-            "value": value_of(attr),
-            "ts_ms": attr.timestamp_in_ms or None,
-            "display_value": attr.display_value or None,
-            "status": int(attr.status),
-        }
+    for f in msg.DESCRIPTOR.fields:
+        if f.message_type is None:
+            continue
+        try:
+            if not msg.HasField(f.name):
+                continue
+        except ValueError:
+            continue  # repeated/map fields and groups have no presence
+        attr = getattr(msg, f.name)
+        if hasattr(attr, "timestamp_in_ms"):
+            out["attributes"][f.name] = entry(attr)
+        elif hasattr(attr, "value"):
+            # newer typed attributes (e.g. Int64DistanceAttribute) keep the
+            # value at field 1 and metadata (ts/status) in field 2
+            ent = entry(attr)
+            ent["value"] = attr.value
+            if getattr(attr, "display_value", None):
+                ent["display_value"] = attr.display_value
+            out["attributes"][f.name] = ent
     return out
 
 

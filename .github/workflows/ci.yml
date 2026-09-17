@@ -5,13 +5,19 @@ on:
     branches: ["*"]
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  # Never let synthetic session tests reach a desktop credential store.
+  PYTHON_KEYRING_BACKEND: keyring.backends.null.Keyring
+
 jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest]
         python: ["3.9", "3.12", "3.13"]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,14 +28,17 @@ jobs:
           python -m pip install --require-hashes -r requirements.lock
           python -m pip install --no-deps --require-hashes -r build.lock
           python -m pip install --no-build-isolation --no-deps .
-      - name: Unit tests
+      - name: Unit tests (offline fixtures)
         run: python -m unittest discover -s tests -v
-      - name: CLI smoke
+      - name: CLI smoke (no login or daemon)
         run: |
+          export HOME="$(mktemp -d)"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_STATE_HOME="$HOME/.local/state"
           python -m omarchy_mercedes.cli --version
           python -m omarchy_mercedes.waybar_module < /dev/null | python -c "import json,sys; d=json.loads(sys.stdin.read()); assert 'text' in d and 'class' in d; print('waybar json ok:', d['class'])"
       - name: Installer syntax check
-        run: bash -n install.sh uninstall.sh
+        run: bash -n install.sh uninstall.sh tests/check_marketplace_setup.sh
       - name: Lock drift check
         run: |
           python - <<'EOF'
@@ -37,7 +46,7 @@ jobs:
           from pathlib import Path
           lock = Path('requirements.lock').read_text()
           pinned = set(re.findall(r'^([A-Za-z0-9_.-]+)==([0-9][^\s;]*)', lock, re.M))
-          floating = [n for n, v in pinned if not re.match(r'^[0-9]+(\.[0-9]+)*$', v)]
+          floating = [n for n, v in pinned if not re.fullmatch(r'[0-9]+(\.[0-9]+)*', v)]
           if floating:
               sys.exit('Non-exact pins in lock: %s' % floating)
           print('lock pins exact:', len(pinned), 'packages')
@@ -50,5 +59,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Isolated user install / uninstall roundtrip (locked, hash-verified)
-        run: bash tools/verify_linux.sh
+      - name: Marketplace connector install / removal (hash-verified, locked)
+        run: bash tests/check_marketplace_setup.sh

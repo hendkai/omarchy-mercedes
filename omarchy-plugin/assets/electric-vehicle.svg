@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Electric vehicle</title>
+  <desc id="desc">Original neutral silver car silhouette with a battery indicator. No manufacturer emblem.</desc>
+  <!-- SPDX-License-Identifier: MIT; original artwork for omarchy-mercedes. -->
+  <defs>
+    <linearGradient id="silver" x1="0" y1="0" x2="0.25" y2="1">
+      <stop stop-color="#fafcff"/>
+      <stop offset="0.5" stop-color="#a7b0b9"/>
+      <stop offset="1" stop-color="#e4e9ee"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#silver)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 31 16 18Q17 15 21 15H43Q47 15 48 18L54 31M10 31H54Q58 31 58 36V47H6V36Q6 31 10 31Z" fill="none"/>
+    <path d="M10 48V52H17V48M47 48V52H54V48M12 38H18M46 38H52" fill="none"/>
+    <rect x="24" y="35" width="14" height="7" rx="1.5" fill="none" stroke-width="2"/>
+    <path d="M40 37V40M28 38.5H34" fill="none" stroke-width="2"/>
+  </g>
+</svg>

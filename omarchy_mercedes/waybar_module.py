@@ -27,7 +27,6 @@ from .state import (
     fmt_local,
     read_status,
     vehicle_age_s,
-    age_s,
 )
 
 ICON_CAR = "\N{AUTOMOBILE}"
@@ -51,8 +50,7 @@ def render(status: dict | None, stale_after_s: int = 1800, tz: str | None = None
     if st in (STATE_OK, STATE_STALE) and isinstance(status, dict):
         soc = status.get("soc_percent")
         rng = status.get("range_km")
-        charging_age = age_s(status.get("charging_ts_ms"))
-        charging = status.get("charging") is True and charging_age is not None and charging_age <= stale_after_s
+        charging = bool(status.get("charging"))
         unit = status.get("range_unit", "km")
         v_age = vehicle_age_s(status)
         c_age = connection_age_s(status)
@@ -64,22 +62,19 @@ def render(status: dict | None, stale_after_s: int = 1800, tz: str | None = None
             text = f"{ICON_CAR} {soc}% (?)" if soc is not None else f"{ICON_CAR} ?"
 
         tip = []
-        def measurement(label, value, ts):
-            age = age_s(ts)
-            if value is None or age is None:
-                tip.append(f"{label}: unbekannt")
-            else:
-                stale = "; veraltet" if age > stale_after_s else ""
-                tip.append(f"{label}: {value} (Stand: {fmt_local(ts, tz)}, vor {fmt_age(age)}{stale})")
-
-        measurement("Reichweite", f"{rng} {unit}" if rng is not None else None, status.get("range_ts_ms"))
-        active = status.get("charging")
-        measurement("Ladestatus", "Ladevorgang aktiv" if active is True else ("nicht aktiv" if active is False else None), status.get("charging_ts_ms"))
-        power = status.get("charging_power_kw")
-        measurement("Ladeleistung", f"{power} kW" if power is not None else None, status.get("charging_power_ts_ms"))
-        measurement("Ladeende", status.get("end_of_charge_time"), status.get("end_of_charge_ts_ms"))
-        measurement("Ladestand", f"{soc}%", status.get("soc_ts_ms"))
-        tip.append(f"Letzter Abgleich: {fmt_local(status.get('fetched_at_ms'), tz)}" + (f" (vor {fmt_age(c_age)})" if c_age is not None else ""))
+        if rng is not None:
+            tip.append(f"Reichweite: {rng} {unit}")
+        if charging:
+            pow_kw = status.get("charging_power_kw")
+            line = "Ladevorgang aktiv"
+            if pow_kw:
+                line += f" ({pow_kw} kW)"
+            tip.append(line)
+            ect = status.get("end_of_charge_time")
+            if ect:
+                tip.append(f"Ladeende: {ect}")
+        tip.append(f"Fahrzeugdaten: {fmt_local(status.get('vehicle_ts_ms'), tz)} (vor {fmt_age(v_age)})")
+        tip.append(f"Letzter Abgleich: {fmt_local(status.get('fetched_at_ms'), tz)} (vor {fmt_age(c_age)})")
         if status.get("error_hint"):
             tip.append(f"Hinweis: {status['error_hint']}")
         return {
@@ -135,12 +130,8 @@ def main(argv=None) -> int:
 
     from pathlib import Path
 
-    try:
-        status = read_status(Path(args.status_file))
-        out = render(status, stale_after_s=args.stale_after, tz=args.timezone)
-    except Exception:
-        # a broken cache must never crash the bar: emit valid offline JSON
-        out = render(None, stale_after_s=args.stale_after, tz=args.timezone)
+    status = read_status(Path(args.status_file))
+    out = render(status, stale_after_s=args.stale_after, tz=args.timezone)
     if args.compact:
         out["tooltip"] = ""
     out = {k: v for k, v in out.items() if v is not None}

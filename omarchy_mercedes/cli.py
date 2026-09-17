@@ -26,8 +26,8 @@ def main(argv=None) -> int:
     p_status = sub.add_parser("status", help="zeige aktuellen Statuscache (redigiert)")
     p_status.add_argument("--json", action="store_true")
 
-    p_vehicles = sub.add_parser("vehicles", help="Fahrzeuge im Konto anzeigen (benötigt Login)")
-    p_vehicles.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
+    p_veh = sub.add_parser("vehicles", help="Fahrzeuge im Konto anzeigen (benötigt Login)")
+    p_veh.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
 
     p_daemon = sub.add_parser("daemon", help="Connector-Daemon starten (systemd --user nutzt dies)")
     p_daemon.add_argument("--region", default="eu", choices=["eu", "na", "apac", "cn"])
