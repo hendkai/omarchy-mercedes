@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "hendkai.omarchy-mercedes",
   "name": "Mercedes SoC",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "hendkai",
   "license": "MIT",
   "description": "Mercedes-Benz state of charge in the bar \u2014 read-only connector daemon writes a local status cache, this widget renders it. No vehicle commands, no secrets in the bar process.",

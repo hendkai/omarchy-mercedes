@@ -23,7 +23,11 @@ The installer does not start the connector or perform a login.
 
 ## Controls and appearance
 
-- **Left click:** settings popup: position, percent/bar emphasis and range.
+- **Left click:** settings popup: pairing, position, percent/bar emphasis and range.
+- **Connect to Mercedes:** opens a terminal for the browser login. The terminal
+  stays open to show success, cancellation or setup guidance if the connector is
+  missing. An already-running connector is restarted after a successful login.
+  Passwords and tokens are never handled by the widget.
 - **Right click:** `omarchy-mercedes status` in a terminal.
 - **Hover:** data age, last sync, range, charging information and errors.
 - **Percent:** numeric percentage only; no battery/progress bar.

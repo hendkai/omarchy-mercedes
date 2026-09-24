@@ -7,4 +7,4 @@ DO NOT send vehicle commands through this package: it intentionally contains
 no write endpoints.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

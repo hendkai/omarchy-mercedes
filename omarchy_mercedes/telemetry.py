@@ -196,7 +196,9 @@ def decode_vehicle_attributes(blob: bytes) -> dict:
             # newer typed attributes (e.g. Int64DistanceAttribute) keep the
             # value at field 1 and metadata (ts/status) in field 2
             ent = entry(attr)
-            ent["value"] = attr.value
+            # Proto3 default zero is only meaningful for VALUE_VALID.
+            # NOT_RECEIVED / INVALID / NOT_AVAILABLE must remain unknown.
+            ent["value"] = attr.value if ent["status"] == 0 else None
             if getattr(attr, "display_value", None):
                 ent["display_value"] = attr.display_value
             out["attributes"][f.name] = ent

@@ -15,11 +15,14 @@ PLUGIN="$HOME/.config/omarchy/plugins/hendkai.omarchy-mercedes"
 VENV="$HOME/.local/share/omarchy-mercedes-venv"
 mkdir -p "$PLUGIN"
 # Model the files in the marketplace checkout, including the root manifest.
-for entry in manifest.json README.md LICENSE THIRD_PARTY_NOTICES.md pyproject.toml omarchy_mercedes omarchy-plugin systemd; do
+for entry in manifest.json README.md LICENSE THIRD_PARTY_NOTICES.md pyproject.toml requirements.lock build.lock omarchy_mercedes omarchy-plugin systemd; do
     cp -a "$REPO/$entry" "$PLUGIN/"
 done
 python3 -m venv "$VENV"
-"$VENV/bin/python" -m pip install "$PLUGIN"
+"$VENV/bin/python" -m pip install --require-hashes -r "$PLUGIN/requirements.lock"
+"$VENV/bin/python" -m pip install --no-deps --require-hashes -r "$PLUGIN/build.lock"
+"$VENV/bin/python" -m pip install --no-build-isolation --no-deps "$PLUGIN"
+"$VENV/bin/python" -m pip check
 mkdir -p "$HOME/.local/bin"
 ln -s "$VENV/bin/omarchy-mercedes" "$HOME/.local/bin/omarchy-mercedes"
 mkdir -p "$HOME/.local/share/omarchy-mercedes" "$HOME/.local/state/omarchy-mercedes"
@@ -39,7 +42,7 @@ cd "$TEST_ROOT"
 "$VENV/bin/python" -c 'import omarchy_mercedes, os; assert omarchy_mercedes.__file__.startswith(os.environ["HOME"] + "/.local/share/omarchy-mercedes-venv/")'
 "$VENV/bin/omarchy-mercedes-waybar" | "$VENV/bin/python" -c 'import json,sys; d=json.load(sys.stdin); assert "text" in d and "class" in d; print("Installed Waybar JSON: valid")'
 # Updating the same version is still a real wheel build/install operation.
-"$VENV/bin/python" -m pip install --upgrade "$PLUGIN"
+"$VENV/bin/python" -m pip install --no-build-isolation --no-deps --upgrade "$PLUGIN"
 # Preserve a synthetic session sentinel while removing code/runtime.
 printf 'synthetic retained data\n' > "$HOME/.local/share/omarchy-mercedes/retention-test"
 rm -- "$HOME/.config/systemd/user/omarchy-mercedes.service"

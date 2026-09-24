@@ -30,7 +30,7 @@ class WidgetLayoutTest(unittest.TestCase):
             put('qs/Commons/Style.qml', 'pragma Singleton\nimport QtQuick\nQtObject { property var font: ({family:"sans-serif",body:13}); property var bar: ({sizeHorizontal:26}); function spaceReal(v) { return v } }')
             put('qs/Commons/Color.qml', 'pragma Singleton\nimport QtQuick\nQtObject { property color foreground:"white"; property color urgent:"red" }')
             put('Quickshell/qmldir', 'module Quickshell\nsingleton Quickshell 1.0 Quickshell.qml\n')
-            put('Quickshell/Quickshell.qml', 'pragma Singleton\nimport QtQuick\nQtObject { function env(k) {return ""} function execDetached(v) {} }')
+            put('Quickshell/Quickshell.qml', 'pragma Singleton\nimport QtQuick\nQtObject { property var lastCommand: []; function env(k) {return ""} function execDetached(v) {lastCommand=v} }')
             put('Quickshell/Io/qmldir', 'module Quickshell.Io\nFileView 1.0 FileView.qml\n')
             put('Quickshell/Io/FileView.qml', 'import QtQuick\nQtObject { property string path; property bool watchChanges; property bool printErrors; signal loaded(); signal loadFailed(); signal fileChanged(); function text(){return "{}"} function reload(){} }')
             shutil.copytree(REPO / 'omarchy-plugin', d / 'plugin')
@@ -39,6 +39,7 @@ class WidgetLayoutTest(unittest.TestCase):
             with (d/'Quickshell/Io/qmldir').open('a') as f: f.write('IpcHandler 1.0 IpcHandler.qml\n')
             put('tst_layout.qml', '''import QtQuick
 import QtTest
+import Quickshell
 import "plugin" as Mercedes
 TestCase {
  name: "MercedesLayout"; when: windowShown; visible: true
@@ -103,6 +104,16 @@ TestCase {
   widget.bar=fakeBar
   var panel=findChild(widget,"mercedesSettings")
   verify(panel!==null); compare(panel.hostWidget,widget)
+  var pairButton=findChild(panel,"pairAccountButton")
+  verify(pairButton!==null,"pairing button exists")
+  widget.uiLocale=Qt.locale("de_DE")
+  compare(pairButton.text,"Mit Mercedes koppeln")
+  widget.open(); pairButton.clicked()
+  compare(Quickshell.lastCommand[0],"xdg-terminal-exec")
+  compare(Quickshell.lastCommand[1],"sh")
+  verify(Quickshell.lastCommand[2].endsWith("/plugin/PairAccount.sh"))
+  compare(Quickshell.lastCommand.length,3)
+  verify(!widget.opened,"pairing closes popup")
   widget.settings={displayMode:"percent",showRange:true,staleAfterSec:3600}
   panel.applySetting("displayMode","bar")
   compare(widget.settings.staleAfterSec,3600); compare(widget.displayMode,"bar")
@@ -137,14 +148,14 @@ TestCase {
  }
 }
 ''')
-            result = subprocess.run([runner, '-input', str(d / 'tst_layout.qml'), '-import', str(d)], env={**os.environ, 'QT_QPA_PLATFORM':'offscreen'}, text=True, capture_output=True, timeout=30)
+            result = subprocess.run([runner, '-input', str(d / 'tst_layout.qml'), '-import', str(d)], env={**os.environ, 'QT_QPA_PLATFORM':'offscreen', 'QT_QPA_PLATFORMTHEME':'', 'QT_QUICK_CONTROLS_STYLE':'Basic'}, text=True, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             # Prove this harness catches the original label-only slot bug.
             widget_path = d / 'plugin/BarWidget.qml'
             original = widget_path.read_text()
             mutant = '\n'.join(line for line in original.splitlines() if 'fixedWidth:' not in line)
             widget_path.write_text(mutant)
-            broken = subprocess.run([runner, '-input', str(d / 'tst_layout.qml'), '-import', str(d)], env={**os.environ, 'QT_QPA_PLATFORM':'offscreen'}, text=True, capture_output=True, timeout=30)
+            broken = subprocess.run([runner, '-input', str(d / 'tst_layout.qml'), '-import', str(d)], env={**os.environ, 'QT_QPA_PLATFORM':'offscreen', 'QT_QPA_PLATFORMTHEME':'', 'QT_QUICK_CONTROLS_STYLE':'Basic'}, text=True, capture_output=True, timeout=30)
             self.assertNotEqual(broken.returncode, 0, 'Width mutation was not detected')
             self.assertIn('host reserves composed content width', broken.stdout)
 

@@ -49,7 +49,8 @@ _No response_
 
 Read-only Mercedes-Benz state-of-charge, electric-range and charging widget.
 Root manifest loads `omarchy-plugin/BarWidget.qml`. Requires a separately installed
-Python 3.9+ connector (`requests>=2.28`, `protobuf>=4.25`; optional `keyring>=24`),
+Python 3.9+ connector (build and runtime dependencies are pinned transitively in
+`requirements.lock` / `build.lock`, installed with hash enforcement),
 a compatible connected Mercedes account/vehicle and user-performed interactive
 browser login. The recommended setup uses a venv outside the plugin checkout and
 an explicitly installed systemd user service (or a foreground daemon).
@@ -85,6 +86,32 @@ Productivity; System; Widgets; Other.
 
 Tag choices: AI; Bar; Education; Games; Hyprland; Kids; Launcher; Media;
 Power management; Quickshell; Security; System; Workspaces.
+
+## Updating the existing listing (checked 2026-09-24)
+
+This plugin is already listed through marketplace issue #6940. Do not create a
+duplicate `[Plugin]` submission. Use the current `verify-plugin.yml` issue form:
+
+- Title prefix: `[Verify]:`
+- Verification action: `Verify and publish a newer upstream commit`
+- Plugin ID: `hendkai.omarchy-mercedes`
+- Repository URL: `https://github.com/hendkai/omarchy-mercedes`
+- Target commit: the full 40-character **current default-branch HEAD** after merge.
+- Acknowledge that verification applies only to that exact snapshot and is not a
+  security audit.
+- Do **not** request standard installation or claim no manual setup: the Python
+  connector, account login and user service still require explicit setup.
+
+Source: marketplace `.github/ISSUE_TEMPLATE/verify-plugin.yml` and
+`.github/workflows/validate-plugin-update.yml`. The update workflow validates
+an immutable SHA and runs a new security baseline before guarded promotion.
+The new pairing action launches the local CLI in a terminal and can restart
+an already-active user service after successful login. Disclose this capability
+in update notes; do not self-apply maintainer approval/security labels.
+
+Plugin and connector update independently. Mention both README update paths in
+the release notes. Do not publish private callback URLs, tokens, VINs, screenshots
+or vehicle data as review evidence. Keep interrupted tests explicitly unpassed.
 
 ## Local verification commands
 

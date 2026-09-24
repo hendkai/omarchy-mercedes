@@ -1,6 +1,6 @@
 # AI contribution record
 
-Product: omarchy-mercedes 0.1.0 experimental, R1–R9 remediation candidate.
+Product: omarchy-mercedes 0.1.1 experimental, integration candidate.
 Record date: 2026-09-14. Responsible release role: repository maintainer.
 
 ## Development provenance (not a legal compliance assertion)
@@ -21,8 +21,11 @@ Record date: 2026-09-14. Responsible release role: repository maintainer.
 - This candidate requires a separate downstream QA/integration/release pass.
   A language-feature branch and a login pull request are separate workstreams;
   they are not claimed merged or reviewed by this remediation candidate.
-- No human code inspection or completed human live test is evidenced here.
-  Operator authorization is not equivalent to human code review.
+- Integration updates on 2026-09-24 were AI-assisted with Hermes/gpt-6-astra.
+  The operator completed live OAuth callback/token exchange; a CLI persistence
+  failure was then reproduced and fixed with an isolated real-store test. Real
+  read-only telemetry was verified. This is not human code review, and the
+  interrupted automated full-browser smoke is not counted as passing.
 
 Verification commands, actual results and limits: [docs/VERIFICATION.md](docs/VERIFICATION.md).
 No prompts, actual credentials, vehicle identifiers or user telemetry are included

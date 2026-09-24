@@ -110,6 +110,17 @@ Panel {
       Layout.bottomMargin: 6
     }
 
+    Controls.Button {
+      objectName: "pairAccountButton"
+      text: panelRoot.tr("pairAccount")
+      Layout.fillWidth: true
+      onClicked: {
+        var script = decodeURIComponent(Qt.resolvedUrl("PairAccount.sh").toString().replace(/^file:\/\//, ""))
+        Quickshell.execDetached(["xdg-terminal-exec", "sh", script])
+        panelRoot.close()
+      }
+    }
+
     Text {
       text: panelRoot.tr("position")
       color: panelRoot.contentForeground

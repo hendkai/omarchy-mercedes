@@ -58,13 +58,13 @@ def main(argv=None) -> int:
                 tok = login_password(args.region)
             else:
                 tok = login_browser(args.region, open_browser=not args.no_open)
+            save_session(tok)
         except KeyboardInterrupt:
             print("\nAbgebrochen.")
             return 130
         except Exception as e:
             print(f"Login fehlgeschlagen: {e}", file=sys.stderr)
             return 1
-        save_session(tok, args.region)
         print("Login erfolgreich, Session sicher gespeichert.")
         print(json.dumps(redact(tok), indent=2))
         return 0

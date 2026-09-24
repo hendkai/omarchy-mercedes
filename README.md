@@ -75,6 +75,7 @@ python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --require-hashes -r "$PLUGIN/requirements.lock"
 "$VENV/bin/python" -m pip install --no-deps --require-hashes -r "$PLUGIN/build.lock"
 "$VENV/bin/python" -m pip install --no-build-isolation --no-deps "$PLUGIN"
+"$VENV/bin/python" -m pip check
 mkdir -p "$HOME/.local/bin"
 # Refuses to replace an existing CLI (no -f).
 ln -s "$VENV/bin/omarchy-mercedes" "$HOME/.local/bin/omarchy-mercedes"
@@ -93,9 +94,18 @@ hash-verified `requirements.lock` — no extra floating install is needed.
 "$HOME/.local/bin/omarchy-mercedes" login
 ```
 
+You can also open the widget settings and choose **Connect to Mercedes**.
+This launches the same login in a terminal, keeps its result visible until Enter,
+and restarts an already-running connector after success. The button does not
+install dependencies automatically; a missing connector gets explicit setup guidance.
+
 Complete the Mercedes browser login yourself, including any second factor. If
 the browser cannot open the `rismycar://login-callback` redirect, follow the
-local CLI prompt to paste the callback there. That URL contains a short-lived
+local CLI prompt to paste the callback there. The temporary handler is registered
+before opening the browser and the application cache is refreshed automatically.
+Only one login runs at a time; terminal echo and handler state are cleaned up on
+success, cancellation and timeout. The login start URL is not accepted as a code.
+That callback URL contains a short-lived
 credential: **never put it, passwords, codes or tokens in an issue or chat**.
 
 For systemd, the following command refuses to overwrite an existing unit:
