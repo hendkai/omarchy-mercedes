@@ -25,6 +25,22 @@ var catalogs = {
  zh: ["正在读取状态", "登录", "连接器离线", "电量", "续航里程", "正在充电", "充电完成", "车辆数据", "上次同步", "车辆数据已超过{0}分钟", "提示", "未知", "{0}前", "位置", "显示", "左侧", "居中", "右侧", "百分比", "电量条", "显示续航里程", "秒", "分钟", "小时", "天"],
  ar: ["جارٍ قراءة الحالة", "تسجيل الدخول", "الموصل غير متصل", "الشحن", "المدى", "جارٍ الشحن", "اكتمال الشحن", "بيانات السيارة", "آخر مزامنة", "بيانات السيارة أقدم من {0} دقيقة", "ملاحظة", "غير معروف", "منذ {0}", "الموضع", "العرض", "اليسار", "الوسط", "اليمين", "النسبة المئوية", "شريط الشحن", "إظهار المدى", "ث", "د", "س", "ي"]
 }
+// Keep the pairing action available in every supported locale.
+var pairingLabels = {
+ en: "Connect to Mercedes", de: "Mit Mercedes koppeln",
+ fr: "Connecter à Mercedes", es: "Conectar con Mercedes",
+ it: "Collega a Mercedes", pt: "Ligar à Mercedes",
+ nl: "Koppelen met Mercedes", pl: "Połącz z Mercedes",
+ cs: "Připojit k Mercedes", da: "Forbind til Mercedes",
+ sv: "Anslut till Mercedes", nb: "Koble til Mercedes",
+ fi: "Yhdistä Mercedesiin", tr: "Mercedes hesabına bağlan",
+ uk: "Підключитися до Mercedes", ru: "Подключиться к Mercedes",
+ ja: "Mercedes に接続", ko: "Mercedes 연결", zh: "连接 Mercedes",
+ ar: "الاتصال بمرسيدس"
+}
+keys.push("pairAccount")
+for (var locale in catalogs) catalogs[locale].push(pairingLabels[locale] || pairingLabels.en)
+
 function language(localeName) {
  var base = String(localeName || "en").toLowerCase().split(/[-_.@]/)[0]
  if (base === "no") base = "nb"

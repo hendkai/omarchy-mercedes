@@ -1,141 +1,33 @@
-"""Interactive login helper.
+"""Interactive OAuth login: PKCE/state, temporary XDG handoff, hidden input.
 
-Two flows, both real Mercedes flows (no invented endpoints):
-
-A) BROWSER (preferred, supports 2FA/MFA): we start a PKCE authorization
-   request, open the Mercedes login page in the user's browser, run a tiny
-   localhost HTTP listener; the page redirects to rismycar://login-callback
-   which the desktop normally cannot catch - so we also register a temporary
-   xdg-mime handler (Linux) or instruct manual code paste (any OS).
-
-B) PASSWORD (headless): CIAM password grant flow as implemented by
-   mbapi2020; fails with TwoFactorRequiredError when OTP is enforced.
-
-Neither flow puts passwords or codes on the command line; input uses
-getpass-style prompts. Tokens go to the session store (keyring/0600 file),
-never to the repo, logs or chat.
+The single-threaded POSIX input loop restores terminal attributes on success,
+timeout, cancellation and exceptions. No credential input runs in daemon threads.
 """
-
 from __future__ import annotations
 
 import base64
-import json
+import getpass
+import hashlib
+import os
 import secrets
-import shlex
-import socket
-import subprocess
+import select
 import sys
-import threading
 import time
 import urllib.parse
 import webbrowser
-from pathlib import Path
 
+from . import callback as cb
 from .api_constants import LOGIN_APP_ID, LOGIN_BASE_URL, OAUTH_REDIRECT_URI, OAUTH_SCOPE
-from .oauth_client import MercedesOAuthClient, SAFARI_UA, _basic_headers
+from .oauth_client import MercedesOAuthClient
 
 try:
     import requests
-except ImportError:  # pragma: no cover
+except ImportError:
     requests = None
-
-import hashlib
 
 
 class LoginAborted(RuntimeError):
     pass
-
-
-class _RismycarHandler:
-    """Temporarily register an xdg handler that captures rismycar:// URLs.
-
-    GNOME/KDE have no app for the rismycar:// scheme, so the OAuth redirect
-    dies in a useless "No Apps available" dialog and the code is lost. We
-    register a tiny desktop entry for the duration of the login that writes
-    the full callback URL to a capture file; removed again afterwards.
-    """
-
-    def __init__(self) -> None:
-        import tempfile
-
-        self.tmpdir = Path(tempfile.mkdtemp(prefix="omarchy-mercedes-login-"))
-        self.capture_file = self.tmpdir / "callback.url"
-        self.desktop_name = "omarchy-mercedes-capture.desktop"
-        self.desktop_path = Path.home() / ".local/share/applications" / self.desktop_name
-        self._prev_default: str | None = None
-
-    def install(self) -> bool:
-        try:
-            import shutil
-            import subprocess
-
-            if not shutil.which("xdg-mime"):
-                return False
-            apps_dir = self.desktop_path.parent
-            apps_dir.mkdir(parents=True, exist_ok=True)
-            script = self.tmpdir / "capture.sh"
-            script.write_text(
-                "#!/bin/sh\n"
-                "printf '%s' \"$1\" > " + shlex.quote(str(self.capture_file)) + "\n"
-            )
-            script.chmod(0o755)
-            self.desktop_path.write_text(
-                "[Desktop Entry]\n"
-                "Type=Application\n"
-                "Name=omarchy-mercedes login capture\n"
-                f"Exec={script} %u\n"
-                "NoDisplay=true\n"
-                "X-GNOME-UsesPortal=true\n"
-                "MimeType=x-scheme-handler/rismycar;\n"
-            )
-            prev = subprocess.run(
-                ["xdg-mime", "query", "default", "x-scheme-handler/rismycar"],
-                capture_output=True, text=True,
-            ).stdout.strip()
-            self._prev_default = prev or None
-            subprocess.run(
-                ["xdg-mime", "default", self.desktop_name, "x-scheme-handler/rismycar"],
-                check=True, capture_output=True,
-            )
-            # The portal daemon caches scheme handlers; without a refresh
-            # Chromium's OpenURI still shows the "No apps available" dialog.
-            subprocess.run(
-                ["update-desktop-database", str(apps_dir)], capture_output=True
-            )
-            subprocess.run(
-                ["systemctl", "--user", "try-restart", "xdg-desktop-portal-gtk.service"],
-                capture_output=True,
-            )
-            time.sleep(4)  # let the portal come back up before the browser redirects
-            return True
-        except Exception:
-            return False
-
-    def read(self) -> str | None:
-        try:
-            url = self.capture_file.read_text().strip()
-            return url or None
-        except OSError:
-            return None
-
-    def remove(self) -> None:
-        import shutil
-        import subprocess
-
-        try:
-            if self._prev_default:
-                subprocess.run(
-                    ["xdg-mime", "default", self._prev_default,
-                     "x-scheme-handler/rismycar"],
-                    capture_output=True,
-                )
-        except Exception:
-            pass
-        try:
-            self.desktop_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
 def _pkce_pair():
@@ -145,135 +37,136 @@ def _pkce_pair():
 
 
 def _system_locale(default: str = "de-DE") -> str:
-    """OS-Locale als IANA-Tag (de_DE -> de-DE); Fallback default."""
-    import locale as _locale
-
+    import locale
     try:
-        loc = _locale.getlocale()[0] or _locale.getdefaultlocale()[0]
+        value = locale.getlocale()[0]
     except Exception:
-        loc = None
-    if not loc:
-        return default
-    return loc.split(".")[0].replace("_", "-")
+        value = None
+    return value.split(".")[0].replace("_", "-") if value else default
 
 
-def login_browser(region: str = "eu", timeout_s: int = 300, open_browser: bool = True) -> dict:
-    """Browser login: user authenticates at Mercedes, we catch the code.
+def _wait_for_code(token, state, timeout_s, handler_installed):
+    """Poll callback and input together; never leave a hidden-input thread alive."""
+    fd = None
+    original = None
+    termios = None
+    try:
+        try:
+            fd = sys.stdin.fileno()
+            if os.isatty(fd):
+                import termios
+                original = termios.tcgetattr(fd)
+                hidden = list(original)
+                hidden[3] &= ~(termios.ECHO | termios.ECHONL)
+                termios.tcsetattr(fd, termios.TCSANOW, hidden)
+        except (AttributeError, OSError, ValueError):
+            fd = None
+        print("Callback oder Code bei Bedarf hier einfügen (verdeckt). Strg+C bricht ab.", flush=True)
+        deadline = time.monotonic() + timeout_s
+        buffer = b""
+        attempts = 0
+        while time.monotonic() < deadline:
+            spooled = cb.read_spool(token)
+            if spooled:
+                try:
+                    if not spooled.lower().startswith("rismycar://"):
+                        raise cb.InvalidCallback("Der System-Handler muss eine vollständige Callback-Adresse liefern.")
+                    code = cb.parse_pasted_callback(spooled, expected_state=state)
+                    print("\nCallback vom System-Handler übernommen.", flush=True)
+                    return code
+                except cb.InvalidCallback as error:
+                    print(f"\nCallback nicht akzeptiert: {error}", flush=True)
+            remaining = max(0, min(.1, deadline-time.monotonic()))
+            if fd is None:
+                if not handler_installed:
+                    raise LoginAborted("Keine interaktive Eingabe und kein Callback-Handler verfügbar.")
+                time.sleep(remaining)
+                continue
+            readable, _, _ = select.select([fd], [], [], remaining)
+            if not readable:
+                continue
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                fd = None
+                if not handler_installed:
+                    raise LoginAborted("Eingabe geschlossen — Login abgebrochen.")
+                continue
+            buffer += chunk
+            if len(buffer) > 8192:
+                buffer = b""
+                attempts += 1
+                print("Eingabe zu lang — bitte nur den Callback einfügen.", flush=True)
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                try:
+                    return cb.parse_pasted_callback(line.decode("utf-8", errors="replace"), expected_state=state)
+                except cb.InvalidCallback as error:
+                    attempts += 1
+                    print(f"Eingabe nicht akzeptiert: {error}", flush=True)
+            if attempts >= 3:
+                raise LoginAborted("Zu viele ungültige Eingaben — Login bitte neu starten.")
+        raise LoginAborted("Zeitüberschreitung — Login bitte neu starten.")
+    finally:
+        if original is not None and termios is not None:
+            # Discard unread hidden input before restoring echo on every exit.
+            # Keep the original fd even when EOF disabled further input polling.
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSAFLUSH, original)
 
-    We listen on 127.0.0.1:<free port> and use redirect_uri
-    http://localhost:<port>/cb ONLY as a local helper - Mercedes requires the
-    rismycar:// scheme for this client_id, so after authentication the IdP
-    shows/redirects to rismycar://login-callback?code=... . Desktop browsers
-    cannot hand that to us automatically, so we ALSO watch for the manual
-    fallback: the user pastes the code (or the full rismycar:// URL) into the
-    terminal prompt when the browser cannot complete the handoff.
 
-    Returns the token dict (stored by caller).
-    """
+def login_browser(region: str = "eu", timeout_s: int = 300, open_browser: bool = True,
+                  input_fn=None, runner=None) -> dict:
+    with cb.login_lock():
+        cb.cleanup_stale_handlers(runner=runner)
+        return _login_browser(region, timeout_s, open_browser, input_fn, runner)
+
+
+def _login_browser(region, timeout_s, open_browser, input_fn, runner):
     if requests is None:
-        raise LoginAborted("'requests' required for login (pip install requests)")
-
+        raise LoginAborted("'requests' required for login")
     verifier, challenge = _pkce_pair()
-    base = LOGIN_BASE_URL[region]
-    client_id = LOGIN_APP_ID[region]
-
+    state = secrets.token_urlsafe(24)
     params = {
-        "client_id": client_id,
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-        "redirect_uri": OAUTH_REDIRECT_URI,
-        "response_type": "code",
-        "scope": OAUTH_SCOPE,
+        "client_id": LOGIN_APP_ID[region], "code_challenge": challenge,
+        "code_challenge_method": "S256", "redirect_uri": OAUTH_REDIRECT_URI,
+        "response_type": "code", "scope": OAUTH_SCOPE, "state": state,
         "locale": _system_locale(),
     }
-    auth_url = f"{base}/as/authorization.oauth2?{urllib.parse.urlencode(params)}"
-
-    print("Mercedes-Benz Login (Browser)")
-    print("=============================")
-    print("1. Es öffnet sich die Mercedes-Anmeldeseite im Browser.")
-    print("2. Nach erfolgreicher Anmeldung versucht der Browser, zu")
-    print("   rismycar://login-callback?code=... umzuleiten.")
-    print("3. Desktop-Browser brechen dort oft ab - KEIN PROBLEM:")
-    print("   kopiere in dem Fall die komplette Adresse aus der Adressleiste")
-    print("   (oder den Code darin) und füge sie hier ein.")
-
-    if open_browser:
-        webbrowser.open(auth_url)
-    else:
-        print(f"\nLogin-URL:\n{auth_url}\n")
-
-    print("\nWarte auf Autorisierungs-Code (Strg+C zum Abbrechen)...")
-    handler = _RismycarHandler()
-    handler_installed = handler.install()
-    if handler_installed:
-        print("rismycar://-Handler aktiv: der Code wird automatisch übernommen.")
-    else:
-        print("Kein automatischer Handler möglich - Code bitte manuell einfügen.")
-    deadline = time.time() + timeout_s
-    code = None
-
-    # stdin watcher: user pastes rismycar://... or raw code
-    def stdin_watcher():
-        nonlocal code
+    auth_url = f"{LOGIN_BASE_URL[region]}/as/authorization.oauth2?{urllib.parse.urlencode(params)}"
+    token = cb.session_token()
+    previous = None
+    try:
+        cb.marker_create(token)
+        installed, previous = cb.install_desktop_handler(token, runner=runner, input_fn=input_fn)
+        print("Mercedes-Benz koppeln", flush=True)
+        print("Melde dich im Browser bei Mercedes an. Die Rückleitung wird automatisch übernommen."
+              if installed else "Melde dich im Browser an und füge den rismycar://-Callback hier ein.", flush=True)
+        print("Die https://-Anmeldeseite selbst ist KEIN Callback.", flush=True)
+        # Register the handler before opening the browser (cached browser sessions
+        # may redirect immediately). An unavailable browser gets an explicit fallback.
+        opened = False
+        if open_browser:
+            try:
+                opened = webbrowser.open(auth_url)
+            except webbrowser.Error:
+                pass
+        if not opened:
+            print("Öffne diese Anmeldeadresse im Browser (nicht als Callback einfügen):", flush=True)
+            print(auth_url, flush=True)
+        code = _wait_for_code(token, state, timeout_s, installed)
+        print("Code validiert — Anmeldung wird abgeschlossen.", flush=True)
+        return MercedesOAuthClient(region=region).exchange_code(code, verifier)
+    finally:
         try:
-            line = sys.stdin.readline()
-        except Exception:
-            return
-        line = line.strip()
-        if not line:
-            return
-        if "authorization.oauth2" in line or line.startswith("https://"):
-            print(
-                "Das war die Login-Start-URL, nicht der Code.\n"
-                "Richtig: die Adresse nach dem Login (beginnt mit rismycar://)\n"
-                "oder nur den Code selbst (code=...). Nochmal einfügen:"
-            )
-            line2 = sys.stdin.readline().strip()
-            line = line2 or line
-        if line.startswith("rismycar://"):
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(line).query)
-            code = q.get("code", [None])[0]
-        elif "code=" in line:
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(line).query)
-            code = q.get("code", [None])[0]
-        else:
-            code = line
-
-    t = threading.Thread(target=stdin_watcher, daemon=True)
-    t.start()
-    captured_url = None
-    while time.time() < deadline and not code:
-        if handler_installed:
-            captured_url = handler.read()
-            if captured_url:
-                q = urllib.parse.parse_qs(urllib.parse.urlparse(captured_url).query)
-                code = q.get("code", [None])[0]
-                if code:
-                    print("Code automatisch empfangen (rismycar://-Handler).")
-                    break
-                if "error" in (q or {}):
-                    print(f"Login-Fehler von Mercedes: {q.get('error')}")
-                    handler.remove()
-                    raise LoginAborted(f"authorization error: {q.get('error')}")
-        time.sleep(0.3)
-    handler.remove()
-    if not code:
-        raise LoginAborted("timeout waiting for authorization code")
-    print("Code erhalten, tausche gegen Token ...")
-
-    oauth = MercedesOAuthClient(region=region)
-    return oauth.exchange_code(code, verifier)
+            cb.marker_remove(token)
+        finally:
+            cb.restore_desktop_handler(token, previous, runner=runner)
 
 
 def login_password(region: str = "eu") -> dict:
-    """Headless password login (no 2FA accounts; browser flow handles OTP)."""
-    import getpass
-
     email = input("Mercedes Account E-Mail: ").strip()
     if not email:
         raise LoginAborted("no email given")
     password = getpass.getpass("Passwort (Eingabe verdeckt): ")
     if not password:
         raise LoginAborted("no password given")
-    oauth = MercedesOAuthClient(region=region)
-    return oauth.login_with_password(email, password)
+    return MercedesOAuthClient(region=region).login_with_password(email, password)
